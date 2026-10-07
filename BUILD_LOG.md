@@ -24,6 +24,8 @@ Running notes for the DEV write-up. Newest at the bottom of each section.
 
 ## What surprised me
 
+- **My own push slipped past my own safety check.** I ran a secret scan and `git push` joined by `;` instead of `&&`, so the push went ahead before I'd read the scan. The 2 hits turned out to be placeholder examples in the MongoDB skill docs, and nothing secret went to GitHub. Lesson: gate on the result.
+
 - **My own Caddy config skipped its API-key check.** Caddy runs `handle` blocks before `respond`, so the `respond 401` for a missing key would never have run. That would have left Gemma open to anyone who found the URL. I caught it on re-read, before deploying. `route { }` keeps the written order.
 - **Audio in a pocket:** phone browsers only let a page play sound after a tap. The Start button plays a tiny silent WAV, generated in code, to unlock audio for clips that arrive later. If there's no ElevenLabs key, the browser's built-in voice reads the text instead.
 
@@ -33,6 +35,15 @@ Running notes for the DEV write-up. Newest at the bottom of each section.
 - SDXL-Turbo's weights are open, but its licence is Stability's non-commercial community licence, not an OSI open-source one. That's fine for a hackathon, but worth being honest about in the post.
 
 ## Decisions
+
+- **Dropped DigitalOcean (Oct 8, about 3am).** A GPU Droplet needs a card on file, at about $0.76/hr, and that wasn't possible for me. Gemma moved to **Hugging Face Inference Providers**: `router.huggingface.co/v1` is OpenAI-compatible, so Mastra only needed a new base URL. Gemma 4 31B runs on Novita/DeepInfra at about $0.14 in / $0.40 out per million tokens, which is roughly $0.002 per plan. The 26B-A4B MoE is a Mastra model fallback. Still open weights and swappable through env vars, but no longer on a server I control. That's a trade-off worth saying out loud in the post.
+- **More MongoDB, where it earns its place:**
+  - GridFS stores every generated sketch and ElevenLabs clip, keyed by a hash of what produced it (model + photo + light, or voice + text). The same sketch or sentence is never generated or paid for twice, and the walk diary can replay every clip.
+  - A **time-series collection** (`walk_points`, metaField = walk, 90-day expiry) records the route walked.
+  - The walk doc logs everything said, and where.
+  - The `/walk/[id]` **diary** shows route, distance, stories heard and planned shots reached. It's built for the "taking it outside" section.
+  - Already in place: 2dsphere `$geoNear` for "shot nearby" and "unheard place nearby", plus a TTL cache for Overpass, Nominatim and Commons results.
+- Sketches default to the free geometry drawing. `SKETCH_MODE=hf` uses **Qwen-Image-Edit** (Apache-2.0) through HF providers. It's an instruction-based editor ("redraw as a crayon drawing, keep the layout"), with a cleaner licence than SDXL-Turbo, but it costs money per image.
 
 - Walk mode keeps per-walk state in MongoDB: places already heard, shots already talked through, and the last "your shot is N m away" note. That way it only speaks again when you're meaningfully closer, and never repeats a story. Both "what's here" and "is my shot near" are `$geoNear` queries on 2dsphere indexes.
 - Walk-mode Wikipedia places are cached per roughly 500 m grid cell for a day, so a one-hour walk doesn't hit Wikipedia on every tick.
