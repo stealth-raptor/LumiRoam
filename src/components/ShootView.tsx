@@ -105,7 +105,7 @@ function SpotCard({ spot: s, n }: { spot: Spot; n: number }) {
         )}
         <p className="text-xs text-muted">
           {PHASE_EMOJI[s.light.phase]} {s.light.phase}, sun {s.light.sunAltitude}° {s.light.sunCompass} · {s.shot.lightAngle} · plan by{" "}
-          {s.plan?.writtenBy === "gemma" ? "Gemma" : "template"} · sketch from {s.sketch?.source === "sdxl-turbo" ? "SDXL-Turbo" : "sun + geometry"}
+          {s.plan?.writtenBy === "gemma" ? "Gemma" : "template"} · sketch from {s.sketch?.source === "image-model" ? s.sketch.model : "sun + geometry"}
         </p>
         {s.photo && (
           <a href={s.photo.pageUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-line p-2 text-xs text-muted">

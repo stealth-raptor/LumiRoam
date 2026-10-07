@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { bearing, distanceM } from "@/lib/geo";
 import type { LatLon, Spot } from "@/lib/types";
@@ -38,9 +39,12 @@ function silentWav(): string {
   return `data:audio/wav;base64,${btoa(bin)}`;
 }
 
-type LogEntry = { at: string; parts: TickPart[] };
+type SpokenPart = TickPart & { audioUrl: string | null };
+type LogEntry = { at: string; parts: SpokenPart[] };
+type TrailPoint = { lat: number; lon: number; t: number; acc?: number };
 
 export default function WalkMode({ shootId }: { shootId: string | null }) {
+  const router = useRouter();
   const [spots, setSpots] = useState<Spot[]>([]);
   const [walkId, setWalkId] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "starting" | "walking" | "error">("idle");
@@ -57,6 +61,7 @@ export default function WalkMode({ shootId }: { shootId: string | null }) {
   const busy = useRef(false);
   const watchId = useRef<number | null>(null);
   const wakeLock = useRef<WakeLockSentinel | null>(null);
+  const trail = useRef<TrailPoint[]>([]); // breadcrumbs since the last tick, for the walk diary
 
   useEffect(() => {
     if (!shootId) return;
@@ -66,9 +71,9 @@ export default function WalkMode({ shootId }: { shootId: string | null }) {
       .catch(() => {});
   }, [shootId]);
 
-  const play = useCallback(async (audioB64: string | null, text: string) => {
-    if (audioB64 && audio.current) {
-      audio.current.src = `data:audio/mpeg;base64,${audioB64}`;
+  const play = useCallback(async (audioUrl: string | null, text: string) => {
+    if (audioUrl && audio.current) {
+      audio.current.src = audioUrl;
       await audio.current.play().catch(() => {});
       await new Promise<void>((r) => {
         audio.current!.onended = () => r();
@@ -93,13 +98,20 @@ export default function WalkMode({ shootId }: { shootId: string | null }) {
         const res = await fetch("/api/walk/tick", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ walkId: id, shootId, lat: pos.lat, lon: pos.lon, heading: heading.current }),
+          body: JSON.stringify({
+            walkId: id,
+            shootId,
+            lat: pos.lat,
+            lon: pos.lon,
+            heading: heading.current,
+            trail: trail.current.splice(0, trail.current.length),
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "tick failed");
         if (data.parts?.length) {
           setLog((l) => [{ at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), parts: data.parts }, ...l].slice(0, 20));
-          await play(data.audio, data.text);
+          for (const p of data.parts as SpokenPart[]) await play(p.audioUrl, p.text);
         }
       } catch (err) {
         console.warn("[walk] tick failed", err);
@@ -111,8 +123,10 @@ export default function WalkMode({ shootId }: { shootId: string | null }) {
   );
 
   const onPosition = useCallback(
-    (pos: LatLon, gpsHeading: number | null) => {
+    (pos: LatLon, gpsHeading: number | null, acc?: number) => {
       setMe(pos);
+      const lastPt = trail.current[trail.current.length - 1];
+      if (!lastPt || distanceM(lastPt, pos) > 5 || Date.now() - lastPt.t > 15_000) trail.current.push({ ...pos, t: Date.now(), acc });
       // compass heading from the GPS when walking, otherwise from the last few metres of movement
       if (gpsHeading != null && !isNaN(gpsHeading)) heading.current = gpsHeading;
       else if (prevPos.current && distanceM(prevPos.current, pos) > 8) heading.current = bearing(prevPos.current, pos);
@@ -139,7 +153,12 @@ export default function WalkMode({ shootId }: { shootId: string | null }) {
   useEffect(() => {
     if (status !== "walking" || simulate) return;
     watchId.current = navigator.geolocation.watchPosition(
-      (p) => onPosition({ lat: p.coords.latitude, lon: p.coords.longitude }, p.coords.speed && p.coords.speed > 0.5 ? p.coords.heading : null),
+      (p) =>
+        onPosition(
+          { lat: p.coords.latitude, lon: p.coords.longitude },
+          p.coords.speed && p.coords.speed > 0.5 ? p.coords.heading : null,
+          p.coords.accuracy,
+        ),
       (e) => setError(`GPS: ${e.message}`),
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 },
     );
@@ -189,12 +208,20 @@ export default function WalkMode({ shootId }: { shootId: string | null }) {
     }
   }
 
-  function stop() {
+  async function stop() {
+    const id = walkId;
     setStatus("idle");
     setPocket(false);
     setWalkId(null);
     last.current = null;
     void wakeLock.current?.release().catch(() => {});
+    if (!id) return;
+    await fetch("/api/walk/end", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ walkId: id, trail: trail.current.splice(0, trail.current.length) }),
+    }).catch(() => {});
+    router.push(`/walk/${id}`); // the walk diary
   }
 
   return (
@@ -231,7 +258,7 @@ export default function WalkMode({ shootId }: { shootId: string | null }) {
             Pocket mode
           </button>
           <button onClick={stop} className="rounded-full border border-line px-4 py-4 font-semibold">
-            Stop
+            Stop &amp; see diary
           </button>
         </div>
       )}

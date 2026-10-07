@@ -1,47 +1,67 @@
+import { InferenceClient } from "@huggingface/inference";
+import { dbConfigured } from "./db";
 import { norm360 } from "./geo";
+import { USER_AGENT } from "./http";
+import { findMedia, mediaKey, mediaUrl, putMedia } from "./media";
 import type { Sketch, Spot } from "./types";
 
+const SKETCH_MODEL = () => process.env.SKETCH_MODEL ?? "Qwen/Qwen-Image-Edit";
+const SKETCH_PROVIDER = () => process.env.SKETCH_PROVIDER ?? "fal-ai";
+
 /**
- * Crayon sketch of the shot. With a GPU: SDXL-Turbo redraws the real Commons photo
- * (so the layout is right) in a child-like crayon style. Without one: an SVG drawn from the
- * sun position and geometry alone. Either way it's a rough idea of the shot, not a prediction.
+ * Crayon sketch of the shot: a rough idea, not a prediction.
+ *  - SKETCH_MODE=hf: an open image-editing model on Hugging Face redraws the real Commons photo
+ *    as a child's crayon drawing, so the layout is right. Costs a few cents per image.
+ *  - default: an SVG drawn from the sun position and geometry alone. Free.
+ * Either way the result is stored once in MongoDB GridFS and reused by every later shoot.
  */
 export async function makeSketch(spot: Spot): Promise<{ sketch: Sketch; warning?: string }> {
-  const url = process.env.SKETCH_URL;
-  if (url && spot.photo) {
+  if (process.env.SKETCH_MODE === "hf" && spot.photo && process.env.HF_TOKEN) {
     try {
-      const res = await fetch(`${url.replace(/\/$/, "")}/sketch`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GEMMA_API_KEY ?? ""}` },
-        body: JSON.stringify({ image_url: spot.photo.thumbUrl, prompt: sketchPrompt(spot) }),
-        signal: AbortSignal.timeout(45_000),
-      });
-      if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(() => "")}`.slice(0, 200));
-      const { png_base64 } = (await res.json()) as { png_base64: string };
-      return { sketch: { url: `data:image/png;base64,${png_base64}`, source: "sdxl-turbo" } };
+      return { sketch: await imageModelSketch(spot) };
     } catch (err) {
-      console.warn(`[sketch] GPU sketch failed for ${spot.name}:`, (err as Error).message);
+      console.warn(`[sketch] image model failed for ${spot.name}:`, (err as Error).message);
       return {
-        sketch: geometrySketch(spot),
-        warning: "The GPU sketch server didn't answer, so sketches are drawn from sun + geometry data instead.",
+        sketch: await geometrySketch(spot),
+        warning: "The image model didn't answer, so sketches are drawn from sun + geometry data instead.",
       };
     }
   }
-  return {
-    sketch: geometrySketch(spot),
-    warning: url ? undefined : "No GPU sketch server (SKETCH_URL), so sketches are drawn from sun + geometry data.",
-  };
+  return { sketch: await geometrySketch(spot) };
+}
+
+async function imageModelSketch(spot: Spot): Promise<Sketch> {
+  const photo = spot.photo!;
+  const model = SKETCH_MODEL();
+  // the same photo in the same light always gives the same sketch: never pay for it twice
+  const key = mediaKey("sketch", model, photo.title, spot.light.phase);
+  if (dbConfigured()) {
+    const hit = await findMedia(key);
+    if (hit) return { url: mediaUrl(hit), source: "image-model", model };
+  }
+  const src = await fetch(photo.thumbUrl, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(20_000) });
+  if (!src.ok) throw new Error(`Commons image ${src.status}`);
+  const hf = new InferenceClient(process.env.HF_TOKEN);
+  const out = await hf.imageToImage(
+    { provider: SKETCH_PROVIDER() as "fal-ai", model, inputs: await src.blob(), parameters: { prompt: sketchPrompt(spot) } },
+    { signal: AbortSignal.timeout(90_000) },
+  );
+  const bytes = Buffer.from(await out.arrayBuffer());
+  const type = out.type || "image/png";
+  if (!dbConfigured()) return { url: `data:${type};base64,${bytes.toString("base64")}`, source: "image-model", model };
+  const id = await putMedia(key, bytes, type, { kind: "sketch", model, photo: photo.title, spot: spot.name, phase: spot.light.phase });
+  return { url: mediaUrl(id), source: "image-model", model };
 }
 
 export function sketchPrompt(spot: Spot): string {
   const sky: Record<Spot["light"]["phase"], string> = {
-    "golden hour": "warm orange and pink sunset sky",
-    "blue hour": "deep blue twilight sky with glowing yellow windows",
-    night: "dark night sky with yellow lights",
-    "low sun": "warm afternoon light, long shadows",
-    "high sun": "bright blue sky, white clouds",
+    "golden hour": "a warm orange and pink sunset sky",
+    "blue hour": "a deep blue twilight sky with glowing yellow windows",
+    night: "a dark night sky with yellow lights",
+    "low sun": "warm afternoon light and long shadows",
+    "high sun": "a bright blue sky with white clouds",
   };
-  return `a child's crayon drawing of ${spot.name}, ${sky[spot.light.phase]}, wax crayon on paper, simple shapes, thick wobbly outlines, naive art`;
+  return `Redraw this photo as a young child's wax crayon drawing on white paper. Keep the same layout and composition: ${spot.name} stays where it is in the frame. Simple wobbly outlines, bright flat colours, ${sky[spot.light.phase]}. No text, no photo realism.`;
 }
 
 // ---------- geometry fallback ----------
@@ -87,7 +107,14 @@ ${[-55, 0, 55].map((dx) => `<rect x="${x + dx - 12}" y="${ground - 95}" width="2
   }
 }
 
-export function geometrySketch(spot: Spot): Sketch {
+async function geometrySketch(spot: Spot): Promise<Sketch> {
+  const svg = geometrySvg(spot);
+  if (!dbConfigured()) return { url: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, source: "geometry", model: null };
+  const id = await putMedia(mediaKey("sketch-svg", svg), Buffer.from(svg), "image/svg+xml", { kind: "sketch", spot: spot.name, phase: spot.light.phase });
+  return { url: mediaUrl(id), source: "geometry", model: null };
+}
+
+export function geometrySvg(spot: Spot): string {
   const W = 512;
   const H = 384;
   const ground = 300;
@@ -134,5 +161,5 @@ ${subjectShape(spot.kind, subjX, ground, lit)}
 </g>
 <rect width="${W}" height="${H}" filter="url(#paper)"/>
 </svg>`;
-  return { url: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, source: "geometry" };
+  return svg;
 }

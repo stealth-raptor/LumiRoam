@@ -19,7 +19,7 @@ export default function Home() {
         <SavedShoots />
       </Suspense>
       <footer className="text-xs text-muted">
-        Open source: Gemma + SDXL-Turbo on our own GPU, Mastra, OpenStreetMap, Wikipedia, Wikimedia Commons, Open-Meteo.
+        Open source at the core: Gemma 4 (via Hugging Face), Mastra, OpenStreetMap, Wikipedia, Wikimedia Commons, Open-Meteo. Shoots, sketches, voice clips and walks live in MongoDB Atlas.
       </footer>
     </main>
   );

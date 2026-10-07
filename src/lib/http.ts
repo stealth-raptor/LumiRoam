@@ -1,7 +1,7 @@
 // Nominatim, Overpass and the Wikimedia APIs all ask for an identifying
 // User-Agent with a way to contact the operator, and throttle generic ones.
 export const USER_AGENT =
-  process.env.LUMIROAM_USER_AGENT ?? "LumiRoam/0.1 (open-source photographer's tour guide)";
+  process.env.LUMIROAM_USER_AGENT ?? "LumiRoam/0.1 (+https://github.com/stealth-raptor/LumiRoam; open-source photographer's tour guide)";
 
 // Minimum gap between requests to the same host. Nominatim's policy is 1 req/s;
 // Wikimedia asks for serial requests rather than parallel bursts.

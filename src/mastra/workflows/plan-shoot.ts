@@ -95,7 +95,7 @@ const writePlans = createStep({
       return {
         ...ctx,
         spots: ctx.spots.map((s) => ({ ...s, plan: templatePlan(s, gear) })),
-        notes: [...ctx.notes, "Gemma is offline (no GEMMA_BASE_URL), so plans are template text."],
+        notes: [...ctx.notes, "Gemma is offline (no HF_TOKEN), so plans are template text."],
       };
     }
     const agent = mastra.getAgent("plannerAgent");

@@ -25,7 +25,22 @@ export async function db(): Promise<Db> {
 }
 
 async function ensureIndexes(d: Db) {
+  // walk breadcrumbs: a time-series collection (compact, bucketed by walk, auto-expires after 90 days)
+  const existing = new Set((await d.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name));
+  if (!existing.has("walk_points")) {
+    await d
+      .createCollection("walk_points", {
+        timeseries: { timeField: "ts", metaField: "walk", granularity: "seconds" },
+        expireAfterSeconds: 90 * 86400,
+      })
+      .catch((e) => {
+        if (e?.codeName !== "NamespaceExists") throw e;
+      });
+  }
   await Promise.all([
+    // GridFS media are looked up by what produced them (cache key), never generated twice
+    d.collection("media.files").createIndex({ "metadata.key": 1 }, { unique: true }),
+    d.collection("walk_points").createIndex({ walk: 1, ts: 1 }),
     // "is my planned shot near me": $geoNear on where to stand, scoped to one shoot
     d.collection("spots").createIndex({ stand: "2dsphere", shootId: 1 }),
     // "what's here that I haven't heard about": $geoNear over cached Wikipedia places

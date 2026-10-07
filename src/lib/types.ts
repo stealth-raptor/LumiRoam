@@ -91,8 +91,9 @@ export const Plan = z.object({
 export type Plan = z.infer<typeof Plan>;
 
 export const Sketch = z.object({
-  url: z.string(), // data: URL or hosted URL
-  source: z.enum(["sdxl-turbo", "geometry"]),
+  url: z.string(), // /api/media/<GridFS id>, or a data: URL when there's no database
+  source: z.enum(["image-model", "geometry"]),
+  model: z.string().nullable(), // e.g. "Qwen/Qwen-Image-Edit" for image-model sketches
 });
 export type Sketch = z.infer<typeof Sketch>;
 
