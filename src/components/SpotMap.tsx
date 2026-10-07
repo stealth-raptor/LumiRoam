@@ -1,24 +1,41 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
-import { CircleMarker, MapContainer, Polyline, TileLayer, Tooltip, useMap } from "react-leaflet";
-import { useEffect } from "react";
+import { CircleMarker, MapContainer, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
+import { useEffect, useRef } from "react";
 import type { LatLon, Spot } from "@/lib/types";
 
 const ll = (p: LatLon): [number, number] => [p.lat, p.lon];
 
 function FitBounds({ points }: { points: [number, number][] }) {
   const map = useMap();
+  const fitted = useRef(false);
   useEffect(() => {
-    if (points.length) map.fitBounds(points, { padding: [28, 28], maxZoom: 17 });
+    if (fitted.current || !points.length) return;
+    map.fitBounds(points, { padding: [28, 28], maxZoom: 17 });
+    fitted.current = true;
   }, [map, points]);
   return null;
 }
 
+function ClickToPick({ onPick }: { onPick: (p: LatLon) => void }) {
+  useMapEvents({ click: (e) => onPick({ lat: e.latlng.lat, lon: e.latlng.lng }) });
+  return null;
+}
+
 /** Subjects (big dots), where to stand (small dots) and the line of sight between them. */
-export default function SpotMap({ spots, me }: { spots: Spot[]; me?: LatLon | null }) {
+export default function SpotMap({
+  spots,
+  me,
+  onPick,
+}: {
+  spots: Spot[];
+  me?: LatLon | null;
+  onPick?: (p: LatLon) => void; // simulate-walk mode: tap the map to "be" there
+}) {
+  // fit to the plan once; following "me" around would fight the user's panning
   const points = spots.flatMap((s) => [ll(s.subject), ll(s.shot.stand)]);
-  if (me) points.push(ll(me));
+  if (!points.length && me) points.push(ll(me));
   return (
     <MapContainer
       center={points[0] ?? [51.5, 0]}
@@ -31,6 +48,7 @@ export default function SpotMap({ spots, me }: { spots: Spot[]; me?: LatLon | nu
         url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <FitBounds points={points} />
+      {onPick && <ClickToPick onPick={onPick} />}
       {spots.map((s, i) => (
         <span key={s.key}>
           <Polyline positions={[ll(s.shot.stand), ll(s.subject)]} pathOptions={{ color: "#d9661f", weight: 3, dashArray: "6 6" }} />

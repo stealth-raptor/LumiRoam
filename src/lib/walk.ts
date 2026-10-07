@@ -11,13 +11,22 @@ type PlaceDoc = {
   extract: string | null;
 };
 
-type WalkDoc = { _id: ObjectId; shootId: ObjectId | null; heard: string[]; startedAt: Date; lastTickAt?: Date };
+type WalkDoc = {
+  _id: ObjectId;
+  shootId: ObjectId | null;
+  heard: string[]; // place ids already talked about
+  doneShots: string[]; // spot keys the walker has already been talked through at the spot
+  lastShotNote?: { key: string; bucket: number }; // last "your shot is N m away" so we don't repeat it
+  startedAt: Date;
+  lastTickAt?: Date;
+};
 
 export async function startWalk(shootId: string | null): Promise<string> {
   const d = await db();
   const { insertedId } = await d.collection<Omit<WalkDoc, "_id">>("walks").insertOne({
     shootId: shootId && ObjectId.isValid(shootId) ? new ObjectId(shootId) : null,
     heard: [],
+    doneShots: [],
     startedAt: new Date(),
   });
   return insertedId.toHexString();
@@ -32,6 +41,7 @@ export async function getWalk(walkId: string) {
 export async function nearestPlannedShot(
   shootId: string,
   here: LatLon,
+  skipKeys: string[] = [],
 ): Promise<{ spot: Spot; distanceM: number; bearing: number } | null> {
   if (!ObjectId.isValid(shootId)) return null;
   const d = await db();
@@ -44,7 +54,7 @@ export async function nearestPlannedShot(
           key: "stand",
           distanceField: "dist",
           spherical: true,
-          query: { shootId: new ObjectId(shootId) },
+          query: { shootId: new ObjectId(shootId), key: { $nin: skipKeys } },
         },
       },
       { $limit: 1 },
@@ -117,4 +127,15 @@ export async function nextUnheardPlace(
   }
   const at = { lat: hit.at.coordinates[1], lon: hit.at.coordinates[0] };
   return { id: hit._id, title: hit.title, extract: hit.extract, distanceM: Math.round(hit.dist), bearing: Math.round(bearing(here, at)) };
+}
+
+export async function updateWalk(walkId: string, update: { doneShot?: string; lastShotNote?: { key: string; bucket: number } }) {
+  const d = await db();
+  await d.collection<WalkDoc>("walks").updateOne(
+    { _id: new ObjectId(walkId) },
+    {
+      ...(update.doneShot ? { $addToSet: { doneShots: update.doneShot } } : {}),
+      $set: { lastTickAt: new Date(), ...(update.lastShotNote ? { lastShotNote: update.lastShotNote } : {}) },
+    },
+  );
 }

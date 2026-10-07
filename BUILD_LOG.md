@@ -24,12 +24,19 @@ Running notes for the DEV write-up. Newest at the bottom of each section.
 
 ## What surprised me
 
+- **My own Caddy config skipped its API-key check.** Caddy runs `handle` blocks before `respond`, so the `respond 401` for a missing key would never have run. That would have left Gemma open to anyone who found the URL. I caught it on re-read, before deploying. `route { }` keeps the written order.
+- **Audio in a pocket:** phone browsers only let a page play sound after a tap. The Start button plays a tiny silent WAV, generated in code, to unlock audio for clips that arrive later. If there's no ElevenLabs key, the browser's built-in voice reads the text instead.
+
 - The laptop (i7-1250U, Intel Iris Xe, 16 GB RAM) has no CUDA GPU, so neither Gemma nor the image model can realistically run locally. Everything model-side has to live on the GPU Droplet from day one.
 - Of the four sponsors whose APIs we call, only ElevenLabs lists an Agent Skill on the Hacktoberfest event. Mastra (`mastra-ai/skills`) and MongoDB (`mongodb/agent-skills`) publish official skills on GitHub. DigitalOcean has no official one, only third-party repos.
 - On DigitalOcean, a powered-off Droplet is still billed. To stop GPU charges you have to snapshot it and destroy it, then recreate it from the snapshot.
 - SDXL-Turbo's weights are open, but its licence is Stability's non-commercial community licence, not an OSI open-source one. That's fine for a hackathon, but worth being honest about in the post.
 
 ## Decisions
+
+- Walk mode keeps per-walk state in MongoDB: places already heard, shots already talked through, and the last "your shot is N m away" note. That way it only speaks again when you're meaningfully closer, and never repeats a story. Both "what's here" and "is my shot near" are `$geoNear` queries on 2dsphere indexes.
+- Walk-mode Wikipedia places are cached per roughly 500 m grid cell for a day, so a one-hour walk doesn't hit Wikipedia on every tick.
+- GPU bundle (`gpu/`): Ollama runs Gemma bound to localhost, a FastAPI SDXL-Turbo img2img server, and Caddy provides HTTPS (via sslip.io) and the bearer key. Snapshot and destroy to stop billing.
 
 - Mastra **workflow** (locate → find-spots → write-plans → sketch → save) for planning, rather than letting a small model choose tools. Gemma does the writing inside the workflow; the walk-guide agent also has tools (nearby place, planned shot) for open questions in Mastra Studio.
 - Gemma is reached through Mastra's OpenAI-compatible model config (`{ providerId, modelId, url, apiKey }`), so swapping models is just an env var.
