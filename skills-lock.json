@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "skills": {
+    "agents": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "agents/SKILL.md",
+      "computedHash": "ecc890cb4e8313bfd054ff6dcc07d421ea67428813fe1436b76cf6aa7c59d13a"
+    },
+    "dubbing": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "dubbing/SKILL.md",
+      "computedHash": "4bb155a789dd86a167a3aca522e1d465897ee8f0235b5a1f1faf4c9349386286"
+    },
+    "mastra": {
+      "source": "mastra-ai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/mastra/SKILL.md",
+      "computedHash": "b59a15f19e3359fde467660081e746aa87c88643cf50cab8da966e94dd01411d"
+    },
+    "mastra-factory": {
+      "source": "mastra-ai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/mastra-factory/SKILL.md",
+      "computedHash": "2af192e14eca33ea9d9992e5f70dc0e8af663caba45fdb78d5fa66b42dbffdde"
+    },
+    "mongodb-atlas-stream-processing": {
+      "source": "mongodb/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/mongodb-atlas-stream-processing/SKILL.md",
+      "computedHash": "3ca2d7b369e785b1510fa8e4d0b35d736525f50413576b2530bc1041d08e862c"
+    },
+    "mongodb-connection": {
+      "source": "mongodb/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/mongodb-connection/SKILL.md",
+      "computedHash": "28953d0cee9671c78ae0c41e6e48c9f2e5aee3ca2652fd44c337c691a22ab7a1"
+    },
+    "mongodb-mcp-setup": {
+      "source": "mongodb/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/mongodb-mcp-setup/SKILL.md",
+      "computedHash": "6b4af68989769d6f002f66e8c7e2dfbc149eccba7c06d4547592cfcfb8cf48d3"
+    },
+    "mongodb-natural-language-querying": {
+      "source": "mongodb/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/mongodb-natural-language-querying/SKILL.md",
+      "computedHash": "0f2bb5c5fc7b18898160bd348372587adaa37ec58e950c62310b6064cda3fbc8"
+    },
+    "mongodb-qe-size-estimation": {
+      "source": "mongodb/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/mongodb-qe-size-estimation/SKILL.md",
+      "computedHash": "db6d8227f3898ccb358e52a91b748d9ba56d2fc5cabf19f682764f30b1666e8f"
+    },
+    "mongodb-query-optimizer": {
+      "source": "mongodb/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/mongodb-query-optimizer/SKILL.md",
+      "computedHash": "dad6bb8b3b21d75b59b18e326d780b55ad849a9c3110ad44ee23d1856130a79a"
+    },
+    "mongodb-schema-design": {
+      "source": "mongodb/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/mongodb-schema-design/SKILL.md",
+      "computedHash": "932249833753aab8cc9f4a5016f406eb82631be57d795fad4611b75a8de34d03"
+    },
+    "mongodb-search-and-ai": {
+      "source": "mongodb/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/mongodb-search-and-ai/SKILL.md",
+      "computedHash": "c819a205a2c87f40abdbd2023de416e2c677188524239daed19f6d3dc2e93955"
+    },
+    "music": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "music/SKILL.md",
+      "computedHash": "cb47292bef57354c45a348c0aaced97624eec9ddb65a8ed3d236a3cf103f95b6"
+    },
+    "setup-api-key": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "setup-api-key/SKILL.md",
+      "computedHash": "3115dc2a4f0c54cc2b27f1b2e5acd161bcdcf7fd46c017924ab3392fb102981c"
+    },
+    "sound-effects": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "sound-effects/SKILL.md",
+      "computedHash": "f76a229156eaa302d0e64159f56055ce733ecf19da768398a6c5b1991ac1d940"
+    },
+    "speech-engine": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "speech-engine/SKILL.md",
+      "computedHash": "4f0f1d8b4aa40d4c631d2295f7d3359cbe7f8a69b329fedd62799b6fda91b145"
+    },
+    "speech-to-text": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "speech-to-text/SKILL.md",
+      "computedHash": "672fb4019cf8a669f746cd0eaa4e6004028ad9322fb072c10aec34d5b97af754"
+    },
+    "text-to-speech": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "text-to-speech/SKILL.md",
+      "computedHash": "d83eccdb3e9f959fd29accebf14a01d622b9681a74ddba0f4f197c04c2555d8a"
+    },
+    "voice-changer": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "voice-changer/SKILL.md",
+      "computedHash": "50d7d166266c3b640ad35d4f2f4096d22b8e3c9670b7edd36aeb8f36f90e01b9"
+    },
+    "voice-isolator": {
+      "source": "elevenlabs/skills",
+      "sourceType": "github",
+      "skillPath": "voice-isolator/SKILL.md",
+      "computedHash": "6538d412211d292384376ac7e3f6e7c1b38ff72d82c6e7b8ce861afc684c7bc0"
+    }
+  }
+}

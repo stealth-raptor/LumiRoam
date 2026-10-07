@@ -1,0 +1,31 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# dependencies / builds
+node_modules/
+.next/
+out/
+build/
+dist/
+.mastra/
+*.tsbuildinfo
+next-env.d.ts
+
+# python (GPU server)
+__pycache__/
+.venv/
+*.pyc
+
+# misc
+.DS_Store
+Thumbs.db
+*.log
+.vercel
+coverage/
+
+# agent skills: .agents/ + skills-lock.json are committed (official sponsor skills);
+# the .claude/skills symlinks use absolute paths, so regenerate with `npx skills experimental_install`
+.claude/skills/
+*.pem

@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+:root {
+  --background: #faf6ef;
+  --foreground: #2a2420;
+  --muted: #7a6e63;
+  --card: #ffffff;
+  --line: #e7ddcf;
+  --accent: #d9661f;
+  --accent-ink: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #16130f;
+    --foreground: #f1e9de;
+    --muted: #a99c8e;
+    --card: #221d18;
+    --line: #3a322a;
+    --accent: #f08a3c;
+    --accent-ink: #1a1410;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-card: var(--card);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.leaflet-container {
+  font: inherit;
+}
