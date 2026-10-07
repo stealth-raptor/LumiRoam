@@ -1,0 +1,3 @@
+# scripts that run on the Linux GPU Droplet must keep LF line endings
+*.sh text eol=lf
+*.py text eol=lf
