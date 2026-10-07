@@ -163,6 +163,12 @@ function SpotCard({ spot: s, n, shootId }: { spot: Spot; n: number; shootId: str
           <h2 className="text-lg font-semibold leading-tight">{s.name}</h2>
         </div>
         {s.plan && <p className="font-medium">{s.plan.headline}</p>}
+        {s.plan?.history && (
+          <p className="rounded-xl bg-background p-3 text-sm leading-relaxed">
+            <span className="font-semibold">📜 History · </span>
+            {s.plan.history}
+          </p>
+        )}
         {s.plan && (
           <dl className="grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-2 text-sm">
             <dt className="text-muted">Stand</dt>

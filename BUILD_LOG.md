@@ -49,6 +49,10 @@ Running notes for the DEV write-up. Newest at the bottom of each section.
 
 ## Decisions
 
+- **Every stop gets a little history** (you asked for it): two or three sentences on who built it, when, and why it matters, retold by Gemma from that stop's Wikipedia text only. It's shown on the card and spoken when you arrive at the planned spot, before the settings. Without Gemma, it's the first two sentences of the article.
+- **Camera is free text** ("Canon EOS 250D", "Sony A7 IV") with a plain APS-C / full-frame choice guessed from the name. The crop factor follows the brand: Canon APS-C is 1.6x, others 1.5x.
+- **The lens line is no longer Gemma's to write.** It once turned "wider than your 18mm, step back 13 m" into "zoom out to 15mm" on an 18-55. Lens advice is pure maths for your own body and lenses, so the computed sentence is shown as-is.
+
 - **A short photowalk: 4 stops, one drawing each, 800 m default radius** (options 500 m / 800 m / 1.2 km).
 - **One Gemma call per plan**, with all 4 photos and fact sheets, so the drawings can differ from each other. A Lodhi Garden example is in the prompt (tomb from the bottom up, the trees, a squirrel on a trunk, the Athpula bridge), plus a per-stop drawing hint (parks: trees and wildlife; monuments: from below). Result for Lodhi Garden: "Light through leaves", "Dome from below", an upward detail of Shish Gumbad, and Sikandar Lodi's tomb as a silhouette.
 - Timings now: plan ~18-28 s, each FLUX drawing ~5-25 s (lazy, one at a time), walk tick ~6-30 s, mostly Wikipedia lookups and TTS.

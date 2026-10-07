@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import ShootView, { type ShootViewProps } from "./ShootView";
+import { guessSensor } from "@/lib/camera";
 import type { Spot } from "@/lib/types";
 
 const STEPS = [
@@ -28,6 +29,7 @@ export default function PlanForm() {
   const router = useRouter();
   const [place, setPlace] = useState("");
   const [localTime, setLocalTime] = useState("");
+  const [camera, setCamera] = useState("");
   const [sensor, setSensor] = useState<"apsc" | "full">("apsc");
   const [lenses, setLenses] = useState("18-55mm kit");
   const [radiusM, setRadiusM] = useState(800);
@@ -43,6 +45,7 @@ export default function PlanForm() {
     setLocalTime((t) => t || defaultTime());
     try {
       const g = JSON.parse(localStorage.getItem(GEAR_KEY) ?? "null");
+      if (g?.camera) setCamera(g.camera);
       if (g?.sensor) setSensor(g.sensor);
       if (g?.lenses) setLenses(g.lenses);
     } catch {}
@@ -62,13 +65,13 @@ export default function PlanForm() {
     setError(null);
     setResult(null);
     try {
-      localStorage.setItem(GEAR_KEY, JSON.stringify({ sensor, lenses }));
+      localStorage.setItem(GEAR_KEY, JSON.stringify({ camera, sensor, lenses }));
     } catch {}
     try {
       const res = await fetch("/api/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ place, localTime, gear: { sensor, lenses }, radiusM }),
+        body: JSON.stringify({ place, localTime, gear: { camera, sensor, lenses }, radiusM }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Something went wrong");
@@ -104,12 +107,26 @@ export default function PlanForm() {
           <span className="text-sm text-muted">When? (local time there)</span>
           <input className={field} type="datetime-local" value={localTime} onChange={(e) => setLocalTime(e.target.value)} required />
         </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-sm text-muted">Your camera</span>
+          <input
+            className={field}
+            value={camera}
+            onChange={(e) => {
+              setCamera(e.target.value);
+              // guess the sensor from the name; the user can still change it below
+              const guess = guessSensor(e.target.value);
+              if (guess) setSensor(guess);
+            }}
+            placeholder="e.g. Canon EOS 250D, Nikon Z6, Sony a6400"
+          />
+        </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-sm text-muted">Camera</span>
+            <span className="text-sm text-muted">Sensor</span>
             <select className={field} value={sensor} onChange={(e) => setSensor(e.target.value as "apsc" | "full")}>
-              <option value="apsc">Canon APS-C</option>
-              <option value="full">Full frame</option>
+              <option value="apsc">APS-C sensor</option>
+              <option value="full">Full-frame sensor</option>
             </select>
           </label>
           <label className="flex flex-col gap-1">

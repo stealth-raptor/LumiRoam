@@ -6,7 +6,7 @@ import { findCandidates, pickDiverse } from "@/lib/spots";
 import { findPhoto, leadPhotos } from "@/lib/sources/commons";
 import { lightAt, shotGeometry } from "@/lib/light";
 import { distanceM } from "@/lib/geo";
-import { factSheet, styled, templateFrame, templatePlan } from "@/lib/plan-text";
+import { factSheet, lensAdvice, styled, templateFrame, templatePlan } from "@/lib/plan-text";
 import { cached, dbConfigured, saveShoot } from "@/lib/db";
 import { geometrySketch } from "@/lib/sketch";
 import { USER_AGENT } from "@/lib/http";
@@ -103,7 +103,7 @@ const findSpots = createStep({
 
 // ONE Gemma call for the whole walk: it sees every stop's photo at once, so it can make the four
 // drawings different from each other (and free tiers count requests)
-const StopPlan = Plan.omit({ writtenBy: true }).extend({ drawingLabel: z.string(), drawingPrompt: z.string() });
+const StopPlan = Plan.omit({ writtenBy: true }).extend({ history: z.string(), drawingLabel: z.string(), drawingPrompt: z.string() });
 const WalkPlan = z.object({ stops: z.array(StopPlan) });
 
 /** The Commons photo, small, as a data URL: the model host doesn't have to fetch from Wikimedia. */
@@ -168,7 +168,10 @@ const writePlans = createStep({
           return fallback(s);
         }
         const { drawingLabel, drawingPrompt, ...plan } = stop;
-        return { ...s, plan: { ...plan, writtenBy: "gemma" as const }, frames: [frameOf(drawingLabel, drawingPrompt, "gemma")] };
+        // The lens line is pure maths for the user's own body and lenses. Gemma kept "improving" it:
+        // full-frame numbers for an APS-C body, 15 mm on an 18-55. So it isn't Gemma's to rewrite.
+        const lens = lensAdvice(s, gear);
+        return { ...s, plan: { ...plan, lens, writtenBy: "gemma" as const }, frames: [frameOf(drawingLabel, drawingPrompt, "gemma")] };
       });
       const notes = missing ? [...ctx.notes, `Gemma skipped ${missing} stop(s); those use template text.`] : ctx.notes;
       return { ...ctx, spots, notes };

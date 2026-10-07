@@ -1,3 +1,4 @@
+import { cropFactor, describeCamera } from "./camera";
 import type { Gear, Plan, Spot } from "./types";
 
 type Lens = { min: number; max: number; label: string };
@@ -19,7 +20,7 @@ export function parseLenses(text: string): Lens[] {
 export function lensAdvice(spot: Spot, gear: Gear): string {
   const ff = spot.shot.focalFF;
   if (ff == null) return "Widest lens you have; a viewpoint is about the whole scene.";
-  const crop = gear.sensor === "apsc" ? 1.6 : 1;
+  const crop = cropFactor(gear);
   const actual = Math.round(ff / crop);
   const eq = crop > 1 ? ` (${ff}mm full-frame equivalent)` : "";
   const lenses = parseLenses(gear.lenses);
@@ -70,6 +71,7 @@ export function templatePlan(spot: Spot, gear: Gear): Plan {
     lens: lensAdvice(spot, gear),
     settings: settingsLine(spot),
     tip: `${cap(LIGHT_WORDS[spot.shot.lightAngle])}. Check the histogram after the first frame and adjust.`,
+    history: spot.wikiExtract ? firstSentences(spot.wikiExtract, 2) : "",
     writtenBy: "template",
   };
 }
@@ -83,7 +85,7 @@ export function factSheet(spot: Spot, gear: Gear): string {
     `WHERE TO STAND (computed): ${standLine(spot)} Light on subject: ${spot.shot.lightAngle}.`,
     `LENS (computed for the user's camera): ${lensAdvice(spot, gear)}`,
     `STARTING SETTINGS (computed): ${settingsLine(spot)}`,
-    `CAMERA: Canon ${gear.sensor === "apsc" ? "APS-C" : "full-frame"}; lenses: ${gear.lenses || "unknown"}`,
+    `CAMERA: ${describeCamera(gear)}; lenses: ${gear.lenses || "unknown"}`,
     spot.photo ? `REFERENCE PHOTO: "${spot.photo.title.replace(/^File:/, "")}"` : "REFERENCE PHOTO: none",
     `ABOUT THE PLACE (Wikipedia): ${spot.wikiExtract ?? "no article"}`,
     DRAWING_HINT[spot.kind] ? `DRAWING HINT: ${DRAWING_HINT[spot.kind]}` : "",
@@ -142,4 +144,9 @@ export function templateFrame(spot: Spot): { label: string; prompt: string } {
   };
   const t = byKind[spot.kind];
   return { label: t.label, prompt: styled(t.scene) };
+}
+
+export function firstSentences(text: string, n: number): string {
+  const parts = text.match(/[^.!?]+[.!?]+/g) ?? [text];
+  return parts.slice(0, n).join(" ").replace(/\s+/g, " ").trim();
 }

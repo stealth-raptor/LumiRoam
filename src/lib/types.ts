@@ -86,6 +86,8 @@ export const Plan = z.object({
   lens: z.string(),
   settings: z.string(),
   tip: z.string(),
+  // a little history of the structure, retold from its Wikipedia text only
+  history: z.string().default(""),
   writtenBy: z.enum(["gemma", "template"]),
 });
 export type Plan = z.infer<typeof Plan>;
@@ -122,6 +124,7 @@ export const Spot = Candidate.extend({
 export type Spot = z.infer<typeof Spot>;
 
 export const Gear = z.object({
+  camera: z.string().max(80).default(""), // free text, e.g. "Canon EOS 250D"
   sensor: z.enum(["apsc", "full"]),
   lenses: z.string(),
 });

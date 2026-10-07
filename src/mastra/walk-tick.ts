@@ -52,7 +52,10 @@ export async function walkTick(input: {
         parts.push({
           kind: "shot-here",
           title: s.name,
-          text: forSpeech(`You're at your planned spot for ${s.name}. ${turnWords} ${s.plan?.lens ?? ""} Settings: ${s.plan?.settings ?? ""} ${s.plan?.tip ?? ""}`),
+          // a little history first, then how to shoot it
+          text: forSpeech(
+            `You're at your planned spot for ${s.name}. ${s.plan?.history ?? ""} ${turnWords} ${s.plan?.lens ?? ""} Settings: ${s.plan?.settings ?? ""} ${s.plan?.tip ?? ""}`,
+          ),
         });
         await updateWalk(input.walkId, { doneShot: s.key });
       } else if (hit.distanceM <= ANNOUNCE_WITHIN_M) {

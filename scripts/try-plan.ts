@@ -6,7 +6,7 @@ const localTime = process.argv[3] ?? "2026-10-09T18:00";
 const t0 = Date.now();
 const run = await mastra.getWorkflow("planShootWorkflow").createRun();
 const res = await run.start({
-  inputData: { place, localTime, gear: { sensor: "apsc", lenses: "18-55mm kit, 50mm f/1.8" }, radiusM: 1500 },
+  inputData: { place, localTime, gear: { camera: "Canon EOS 250D", sensor: "apsc", lenses: "18-55mm kit, 50mm f/1.8" }, radiusM: 1500 },
 });
 console.log("status", res.status, `${Date.now() - t0}ms`);
 if (res.status !== "success") { console.dir(res, { depth: 4 }); process.exit(1); }
