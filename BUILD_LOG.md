@@ -13,6 +13,8 @@ Running notes for the DEV write-up. Newest at the bottom of each section.
 
 ## What broke
 
+- **First deploy on Render:** every plan failed with `tlsv1 alert internal error … SSL alert number 80`. That's what Atlas does to an IP that isn't on its Network Access list: it kills the TLS handshake instead of saying "not allowed". Render's free tier has no fixed outbound IP, so the fix is allowing `0.0.0.0/0` in Atlas. It also exposed two bugs of mine. The app cached the *failed* connection promise forever, so it would have kept failing even after Atlas was fixed. And a database outage took the whole plan down, because the cache lookup in the first step threw. Now the connection retries, the cache is skipped when Mongo is down, sketches inline, and the plan still shows with "Not saved: …" and a readable reason.
+
 - **"Lodhi Garden" geocoded to a tomb.** Nominatim matched "Tomb of Sikandar Lodhi, *Lodhi Garden*, …" because the garden is part of the tomb's address, and OSM spells the park "Lodhi Gardens". The walk was centred on the garden's northern edge and pulled in Khan Market. Fix: prefer an *area* result, otherwise look up a park by that name near the match via Overpass, then keep stops inside the park's bounding box.
 - **The ranking only knew English.** "Bara Gumbad", "Sheesh Gumbad" and "Tomb of Sikandar Lodi" were all classed as "other" and dropped. Added gumbad, masjid, qila, maqbara, dargah, baoli, minar, darwaza, mahal, chhatri, ghat and more. My "small stuff" filter also dropped OSM `historic=tomb`, which in Delhi means a mausoleum.
 - **The park blocked its own monuments.** The garden's centre point was a stop, and nothing within 120 m of it was allowed, so the two Gumbads disappeared. Parks no longer crowd out what's inside them.

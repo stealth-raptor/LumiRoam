@@ -2,8 +2,8 @@ import { MongoClient, ObjectId, type Db } from "mongodb";
 import { toGeoJSON } from "./geo";
 import type { LatLon, Spot } from "./types";
 
-// One long-running Node server on App Platform, one user, Atlas M0 (500-connection cap):
-// a single cached client with a small pool is plenty. The global survives `next dev` hot reloads.
+// One long-running Node server (Render), one user, Atlas M0 (500-connection cap): a single cached
+// client with a small pool is plenty. The global survives `next dev` hot reloads.
 const g = globalThis as unknown as { _mongo?: Promise<MongoClient>; _indexes?: Promise<void> };
 
 export const dbConfigured = () => !!process.env.MONGODB_URI;
@@ -16,12 +16,34 @@ export async function db(): Promise<Db> {
     maxIdleTimeMS: 60_000,
     serverSelectionTimeoutMS: 8_000, // fail fast on a bad URI / IP allowlist instead of hanging the UI
     appName: "lumiroam",
-  }).connect();
+  })
+    .connect()
+    .catch((err) => {
+      // don't cache a failed connection: once Atlas lets us in (e.g. IP allowlist fixed), the next
+      // request should retry instead of failing until the server restarts
+      g._mongo = undefined;
+      throw explain(err);
+    });
   const client = await g._mongo;
   const database = client.db(process.env.MONGODB_DB ?? "lumiroam");
-  g._indexes ??= ensureIndexes(database);
+  g._indexes ??= ensureIndexes(database).catch((err) => {
+    g._indexes = undefined;
+    throw err;
+  });
   await g._indexes;
   return database;
+}
+
+/** Atlas rejects unknown IPs mid-TLS-handshake, which surfaces as a baffling SSL error. Say what it means. */
+function explain(err: unknown): Error {
+  const msg = (err as Error)?.message ?? String(err);
+  if (/SSL alert number 80|tlsv1 alert internal error/i.test(msg)) {
+    return new Error(
+      "MongoDB Atlas refused the connection. This server's IP is probably not on the Atlas Network Access list " +
+        "(hosts without a fixed IP, like Render's free tier, need 0.0.0.0/0). Original error: " + msg,
+    );
+  }
+  return err instanceof Error ? err : new Error(msg);
 }
 
 async function ensureIndexes(d: Db) {
@@ -126,15 +148,20 @@ export async function cached<T>(
   keep: (value: T) => boolean = () => true, // e.g. don't keep a result built while an API was down
 ): Promise<T> {
   if (!dbConfigured()) return fn();
-  const col = (await db()).collection<{ _id: string; value: T; expiresAt: Date }>("cache");
-  const hit = await col.findOne({ _id: key });
-  if (hit && hit.expiresAt > new Date()) return hit.value;
+  // the cache is an optimisation: if the database is unreachable, still answer, just without it
+  let col;
+  try {
+    col = (await db()).collection<{ _id: string; value: T; expiresAt: Date }>("cache");
+    const hit = await col.findOne({ _id: key });
+    if (hit && hit.expiresAt > new Date()) return hit.value;
+  } catch (err) {
+    console.warn("[cache] database unavailable, computing without cache:", (err as Error).message.slice(0, 200));
+    return fn();
+  }
   const value = await fn();
   if (!keep(value)) return value;
-  await col.updateOne(
-    { _id: key },
-    { $set: { value, expiresAt: new Date(Date.now() + ttlSeconds * 1000) } },
-    { upsert: true },
-  );
+  await col
+    .updateOne({ _id: key }, { $set: { value, expiresAt: new Date(Date.now() + ttlSeconds * 1000) } }, { upsert: true })
+    .catch(() => {});
   return value;
 }

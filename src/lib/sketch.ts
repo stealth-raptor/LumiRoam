@@ -49,9 +49,12 @@ ${[-55, 0, 55].map((dx) => `<rect x="${x + dx - 12}" y="${ground - 95}" width="2
 /** Free fallback picture drawn from the sun position and geometry alone, stored in GridFS. */
 export async function geometrySketch(spot: Spot): Promise<Sketch> {
   const svg = geometrySvg(spot);
-  if (!dbConfigured()) return { url: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, source: "geometry" };
-  const id = await putMedia(mediaKey("sketch-svg", svg), Buffer.from(svg), "image/svg+xml", { kind: "sketch", spot: spot.name, phase: spot.light.phase });
-  return { url: mediaUrl(id), source: "geometry" };
+  const inline = { url: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, source: "geometry" as const };
+  if (!dbConfigured()) return inline;
+  const id = await putMedia(mediaKey("sketch-svg", svg), Buffer.from(svg), "image/svg+xml", { kind: "sketch", spot: spot.name, phase: spot.light.phase }).catch(
+    () => null, // database unreachable: inline the SVG instead
+  );
+  return id ? { url: mediaUrl(id), source: "geometry" } : inline;
 }
 
 export function geometrySvg(spot: Spot): string {

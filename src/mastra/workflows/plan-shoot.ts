@@ -201,17 +201,25 @@ const save = createStep({
   outputSchema: Saved,
   execute: async ({ inputData: ctx }) => {
     if (!dbConfigured()) return { ...ctx, shootId: null, notes: [...ctx.notes, "Not saved: MONGODB_URI is not set."] };
-    const shootId = await saveShoot(
-      {
-        place: ctx.request.place,
-        label: ctx.label,
-        center: ctx.center,
-        localTime: ctx.request.localTime,
-        timezone: ctx.timezone,
-        gear: ctx.request.gear,
-      },
-      ctx.spots,
-    );
+    let shootId: string | null = null;
+    try {
+      shootId = await saveShoot(
+        {
+          place: ctx.request.place,
+          label: ctx.label,
+          center: ctx.center,
+          localTime: ctx.request.localTime,
+          timezone: ctx.timezone,
+          gear: ctx.request.gear,
+        },
+        ctx.spots,
+      );
+    } catch (err) {
+      // the plan is still useful on screen; walk mode needs it saved, so say why it isn't
+      const msg = (err as Error).message;
+      console.warn("[save] couldn't save the shoot:", msg.slice(0, 300));
+      return { ...ctx, shootId: null, notes: [...ctx.notes, `Not saved (walk mode needs it): ${msg.slice(0, 220)}`] };
+    }
     return { ...ctx, shootId };
   },
 });
