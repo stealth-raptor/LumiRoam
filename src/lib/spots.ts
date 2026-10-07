@@ -15,14 +15,16 @@ function headNoun(name: string): string {
   return words[words.length - 1] ?? "";
 }
 
+// English plus common South Asian / Middle Eastern words, so "Bara Gumbad", "Jama Masjid",
+// "Purana Qila" or "Agrasen ki Baoli" aren't thrown away as "other"
 const HEAD_KIND: [RegExp, SpotKind][] = [
   [/^(viewpoint|lookout|overlook|belvedere)$/, "viewpoint"],
-  [/^(bridge|viaduct|aqueduct)$/, "bridge"],
-  [/^(tower|lighthouse|windmill|spire|minaret|pagoda|campanile|obelisk)$/, "tower"],
-  [/^(cathedral|church|temple|mosque|chapel|abbey|basilica|gurdwara|mandir|minster|synagogue|shrine|priory)$/, "church"],
-  [/^(statue|memorial|monument|fountain|cross|column|arch|sculpture)$/, "monument"],
-  [/^(falls|waterfall|lake|park|garden|gardens|hill|beach|cliffs?|gorge|peak|common|heath)$/, "nature"],
-  [/^(palace|castle|fort|fortress|museum|hall|house|station|gate|market|library|observatory|lighthouse|mill|ruins?)$/, "building"],
+  [/^(bridge|viaduct|aqueduct|pul|pula|athpula)$/, "bridge"],
+  [/^(tower|lighthouse|windmill|spire|minaret|pagoda|campanile|obelisk|minar|stambh)$/, "tower"],
+  [/^(cathedral|church|temple|mosque|chapel|abbey|basilica|gurdwara|mandir|minster|synagogue|shrine|priory|masjid|dargah|stupa|monastery|gompa)$/, "church"],
+  [/^(statue|memorial|monument|fountain|cross|column|arch|sculpture|tomb|mausoleum|cenotaph|maqbara|gumbad|gumbaz|gumbat|chhatri|chattri|dome)$/, "monument"],
+  [/^(falls|waterfall|lake|park|garden|gardens|bagh|hill|beach|cliffs?|gorge|peak|common|heath|forest|pond|talab|ghat|kund)$/, "nature"],
+  [/^(palace|castle|fort|fortress|museum|hall|house|station|gate|market|library|observatory|mill|ruins?|qila|qilla|mahal|haveli|darwaza|baoli|baori|stepwell|sarai|haveli)$/, "building"],
 ];
 
 function kindOf(tags: Record<string, string>, title = ""): SpotKind {
@@ -64,9 +66,13 @@ const KIND_SCORE: Record<SpotKind, number> = {
  * Photogenic places near `center`, from OSM (what's there) joined with
  * Wikipedia (what's notable, and the facts the guide is allowed to use).
  */
-export async function findCandidates(center: LatLon, radiusM: number): Promise<Candidate[]> {
+export async function findCandidates(center: LatLon, radiusM: number): Promise<{ candidates: Candidate[]; complete: boolean }> {
+  let complete = true;
   const [pois, wiki] = await Promise.all([
-    photogenicPois(center, radiusM).catch(() => [] as OsmPoi[]),
+    photogenicPois(center, radiusM).catch(() => {
+      complete = false; // Overpass was down: still usable, but don't cache it for a week
+      return [] as OsmPoi[];
+    }),
     wikiGeosearch(center, radiusM).catch(() => []),
   ]);
 
@@ -139,15 +145,21 @@ export async function findCandidates(center: LatLon, radiusM: number): Promise<C
       (c.heightM && c.heightM > 25 ? 0.5 : 0) -
       (c.distanceM / radiusM) * 1.5;
   }
-  return all.sort((a, b) => b.score - a.score);
+  return { candidates: all.sort((a, b) => b.score - a.score), complete };
 }
 
-/** Top `n` candidates, skipping ones within `minGapM` of an already-picked spot. */
-export function pickDiverse(cands: Candidate[], n: number, minGapM = 120): Candidate[] {
+/**
+ * Top `n` candidates, skipping ones within `minGapM` of an already-picked spot. A park or garden
+ * is an area, not a point: its centre mustn't crowd out the tombs standing inside it.
+ */
+export function pickDiverse(cands: Candidate[], n: number, minGapM = 60): Candidate[] {
   const picked: Candidate[] = [];
   for (const c of cands) {
     if (picked.length >= n) break;
-    if (picked.some((p) => distanceM(p.subject, c.subject) < minGapM || similar(p.name, c.name))) continue;
+    const crowded = picked.some(
+      (p) => p.kind !== "nature" && c.kind !== "nature" && distanceM(p.subject, c.subject) < minGapM,
+    );
+    if (crowded || picked.some((p) => similar(p.name, c.name))) continue;
     picked.push(c);
   }
   return picked;

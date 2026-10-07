@@ -119,12 +119,18 @@ export async function listShoots(limit = 20) {
 }
 
 /** Small JSON cache with TTL, so we don't hammer Overpass/Nominatim/Wikimedia while testing. */
-export async function cached<T>(key: string, ttlSeconds: number, fn: () => Promise<T>): Promise<T> {
+export async function cached<T>(
+  key: string,
+  ttlSeconds: number,
+  fn: () => Promise<T>,
+  keep: (value: T) => boolean = () => true, // e.g. don't keep a result built while an API was down
+): Promise<T> {
   if (!dbConfigured()) return fn();
   const col = (await db()).collection<{ _id: string; value: T; expiresAt: Date }>("cache");
   const hit = await col.findOne({ _id: key });
   if (hit && hit.expiresAt > new Date()) return hit.value;
   const value = await fn();
+  if (!keep(value)) return value;
   await col.updateOne(
     { _id: key },
     { $set: { value, expiresAt: new Date(Date.now() + ttlSeconds * 1000) } },

@@ -75,7 +75,7 @@ export default function ShootView({ shootId, label, localTime, timezone, spots, 
   );
 }
 
-// one drawing request at a time across all cards: the model draws on a single GPU anyway
+// one drawing request at a time across all cards: free tiers don't like bursts
 let drawQueue: Promise<unknown> = Promise.resolve();
 // once the free daily allowance is used up, stop asking for the rest of this visit
 let outOfAllowance = false;
@@ -86,7 +86,7 @@ function queued<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * The four drawings for a spot. Gemma wrote the prompts at plan time; each picture is drawn by the
+ * The drawing for a stop. Gemma wrote the prompt at plan time; the picture is drawn by the
  * open text-to-image model on first view (POST /api/sketch) and is cached in MongoDB after that.
  */
 function useFrames(spot: Spot, shootId: string | null) {
@@ -132,21 +132,19 @@ function SpotCard({ spot: s, n, shootId }: { spot: Spot; n: number; shootId: str
   return (
     <li className="overflow-hidden rounded-2xl border border-line bg-card">
       {frames.length > 0 ? (
-        <div className="grid grid-cols-2 gap-0.5 bg-line">
-          {frames.map((f, i) => (
-            <button key={i} type="button" onClick={() => setOpen(open === i ? null : i)} className="relative bg-card text-left">
-              {/* eslint-disable-next-line @next/next/no-img-element -- GridFS URLs, not static assets */}
-              <img
-                src={f.url ?? s.sketch?.url}
-                alt={`${f.label}: ${f.prompt}`}
-                className={`aspect-[4/3] w-full object-cover ${f.url ? "" : "opacity-50 blur-[1px]"}`}
-              />
-              <span className="absolute left-1.5 top-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[11px] text-white">
-                {busy === i ? "✏️ drawing…" : f.label}
-              </span>
-            </button>
-          ))}
-        </div>
+        frames.map((f, i) => (
+          <button key={i} type="button" onClick={() => setOpen(open === i ? null : i)} className="relative block w-full text-left">
+            {/* eslint-disable-next-line @next/next/no-img-element -- GridFS URLs, not static assets */}
+            <img
+              src={f.url ?? s.sketch?.url}
+              alt={`${f.label}: ${f.prompt}`}
+              className={`aspect-square w-full object-cover ${f.url ? "" : "opacity-50 blur-[1px]"}`}
+            />
+            <span className="absolute left-2 top-2 rounded-full bg-black/60 px-3 py-1 text-xs text-white">
+              {busy === i ? "✏️ drawing…" : `✏️ ${f.label}`}
+            </span>
+          </button>
+        ))
       ) : (
         s.sketch && (
           // eslint-disable-next-line @next/next/no-img-element -- GridFS / data URLs
@@ -155,8 +153,8 @@ function SpotCard({ spot: s, n, shootId }: { spot: Spot; n: number; shootId: str
       )}
       {open != null && frames[open] && (
         <p className="border-b border-line bg-background px-4 py-2 text-xs text-muted">
-          <span className="font-semibold">{frames[open].label}</span> · prompt by {frames[open].promptBy === "gemma" ? "Gemma, from the photo" : "template"}
-          {frames[open].model ? ` · drawn by ${frames[open].model}` : ""}: “{frames[open].prompt}”
+          Prompt by {frames[open].promptBy === "gemma" ? "Gemma, after looking at the photo" : "template"}
+          {frames[open].model ? `, drawn by ${frames[open].model}` : ""}: “{frames[open].prompt}”
         </p>
       )}
       <div className="flex flex-col gap-3 p-4">
@@ -185,7 +183,7 @@ function SpotCard({ spot: s, n, shootId }: { spot: Spot; n: number; shootId: str
         <p className="text-xs text-muted">
           {PHASE_EMOJI[s.light.phase]} {s.light.phase}, sun {s.light.sunAltitude}° {s.light.sunCompass} · {s.shot.lightAngle} · plan by{" "}
           {s.plan?.writtenBy === "gemma" ? "Gemma" : "template"} · drawings{" "}
-          {frames.some((f) => f.url) ? `by ${frames.find((f) => f.model)?.model ?? "text-to-image"}` : "pending"}
+          {frames.some((f) => f.url) ? `by ${frames.find((f) => f.model)?.model ?? "text-to-image"} (tap it for the prompt)` : "pending"}
           {error ? ` (${error}; showing the geometry sketch)` : ""}
         </p>
         {s.photo && (

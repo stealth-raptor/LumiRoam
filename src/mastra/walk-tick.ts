@@ -83,9 +83,12 @@ export async function walkTick(input: {
         try {
           const res = await mastra.getAgent("guideAgent").generate(
             `LISTENER POSITION: ${place.title} is ${where}.\n\nSOURCE TEXT (Wikipedia):\n${place.extract}`,
-            { abortSignal: AbortSignal.timeout(25_000) },
+            // the facts are already in the prompt; with tools on, Gemma sometimes answered with a
+            // tool call and no text, and the walker silently got the raw Wikipedia intro instead
+            { abortSignal: AbortSignal.timeout(25_000), toolChoice: "none" },
           );
           if (res.text.trim()) story = res.text.trim();
+          else console.warn("[walk] Gemma returned no text; reading the Wikipedia intro instead");
         } catch (err) {
           console.warn("[walk] Gemma story failed, reading the Wikipedia intro instead:", (err as Error).message);
         }

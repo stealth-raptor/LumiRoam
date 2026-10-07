@@ -21,7 +21,7 @@ export const placesTool = createTool({
     "Find photogenic places (viewpoints, towers, bridges, churches, monuments...) near a point, from OpenStreetMap and Wikipedia, best first.",
   inputSchema: LatLon.extend({ radiusM: z.number().default(1500) }),
   outputSchema: z.object({ places: z.array(Candidate) }),
-  execute: async ({ lat, lon, radiusM }) => ({ places: (await findCandidates({ lat, lon }, radiusM)).slice(0, 30) }),
+  execute: async ({ lat, lon, radiusM }) => ({ places: (await findCandidates({ lat, lon }, radiusM)).candidates.slice(0, 30) }),
 });
 
 export const sunLightTool = createTool({

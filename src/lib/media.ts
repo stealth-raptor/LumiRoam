@@ -33,12 +33,21 @@ export async function putMedia(
   if (existing) return existing;
   const b = await bucket();
   const id = new ObjectId();
-  await new Promise<void>((resolve, reject) => {
-    Readable.from(data)
-      .pipe(b.openUploadStreamWithId(id, `${meta.kind ?? "media"}-${key}`, { metadata: { key, contentType, ...meta } }))
-      .on("finish", () => resolve())
-      .on("error", reject);
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      Readable.from(data)
+        .pipe(b.openUploadStreamWithId(id, `${meta.kind ?? "media"}-${key}`, { metadata: { key, contentType, ...meta } }))
+        .on("finish", () => resolve())
+        .on("error", reject);
+    });
+  } catch (err) {
+    // two requests made the same thing at once: the unique key index keeps one, reuse it
+    if ((err as { code?: number }).code !== 11000) throw err;
+    await (await db()).collection(`${BUCKET}.chunks`).deleteMany({ files_id: id }); // orphaned chunks of the loser
+    const winner = await findMedia(key);
+    if (!winner) throw err;
+    return winner;
+  }
   return id.toHexString();
 }
 

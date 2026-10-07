@@ -30,7 +30,7 @@ export default function PlanForm() {
   const [localTime, setLocalTime] = useState("");
   const [sensor, setSensor] = useState<"apsc" | "full">("apsc");
   const [lenses, setLenses] = useState("18-55mm kit");
-  const [radiusM, setRadiusM] = useState(1500);
+  const [radiusM, setRadiusM] = useState(800);
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -115,9 +115,9 @@ export default function PlanForm() {
           <label className="flex flex-col gap-1">
             <span className="text-sm text-muted">Walk radius</span>
             <select className={field} value={radiusM} onChange={(e) => setRadiusM(+e.target.value)}>
+              <option value={500}>500 m</option>
               <option value={800}>800 m</option>
-              <option value={1500}>1.5 km</option>
-              <option value={3000}>3 km</option>
+              <option value={1200}>1.2 km</option>
             </select>
           </label>
         </div>

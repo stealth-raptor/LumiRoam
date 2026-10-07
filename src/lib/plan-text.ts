@@ -86,45 +86,60 @@ export function factSheet(spot: Spot, gear: Gear): string {
     `CAMERA: Canon ${gear.sensor === "apsc" ? "APS-C" : "full-frame"}; lenses: ${gear.lenses || "unknown"}`,
     spot.photo ? `REFERENCE PHOTO: "${spot.photo.title.replace(/^File:/, "")}"` : "REFERENCE PHOTO: none",
     `ABOUT THE PLACE (Wikipedia): ${spot.wikiExtract ?? "no article"}`,
-  ].join("\n");
+    DRAWING_HINT[spot.kind] ? `DRAWING HINT: ${DRAWING_HINT[spot.kind]}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
+
+// Per-stop nudges for the drawing. A general rule in the instructions wasn't always enough: for the
+// garden itself Gemma sometimes drew yet another wide view instead of its trees and wildlife.
+const DRAWING_HINT: Partial<Record<Spot["kind"], string>> = {
+  nature:
+    "this stop is a park or garden. Draw what lives in it up close: big old trees with light coming through the leaves, or a small animal that lives there (like a squirrel on a tree trunk or a bird on a branch). Not a wide view.",
+  monument: "try an unusual angle, for example from the bottom of its steps looking up.",
+  tower: "try looking straight up from its base.",
+};
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export const FRAME_LABELS = ["Main shot", "Detail", "Vertical", "Creative"] as const;
-
-/** Every drawing prompt ends with this, so all frames share one child's-crayon look. */
+/** Every drawing prompt starts with this (FLUX weighs the start most), so all share one look. */
 export const DRAWING_STYLE =
-  "drawn as a young child's wax crayon picture on white paper, simple wobbly outlines, bright flat colours, no text";
+  "A young child's wax crayon drawing on white paper, simple wobbly outlines, bright flat colours, no text";
 
 const SKY_WORDS: Record<Spot["light"]["phase"], string> = {
-  "golden hour": "warm orange and pink sunset sky, low sun",
-  "blue hour": "deep blue twilight sky, glowing yellow windows",
+  "golden hour": "warm orange and pink evening sky",
+  "blue hour": "deep blue twilight sky with glowing yellow lights",
   night: "dark night sky with yellow lights",
-  "low sun": "warm afternoon light, long shadows",
+  "low sun": "warm afternoon light and long shadows",
   "high sun": "bright blue sky with white clouds",
 };
 
-/** Make sure a model-written prompt still carries the shared style. */
-export function styled(prompt: string): string {
-  const p = prompt.trim().replace(/\s+/g, " ").replace(/[.,;\s]+$/, "");
-  return /crayon/i.test(p) ? p : `${p}, ${DRAWING_STYLE}`;
+/** Put the shared style in front of a model-written scene description. */
+export function styled(scene: string): string {
+  const s = scene
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/^(a |an )?(young )?child'?s (wax )?crayon (drawing|picture)( on white paper)?( of)?[:,]?\s*/i, "")
+    .replace(/,?\s*drawn as a young child's wax crayon picture on white paper\.?$/i, "")
+    .replace(/[.,;\s]+$/, "");
+  return `${DRAWING_STYLE}: ${s}`;
 }
 
-/** Drawing prompts built from the facts alone, used when Gemma is offline. */
-export function templateFrames(spot: Spot): { label: string; prompt: string }[] {
+/** One drawing per stop from the facts alone, used when Gemma is offline. */
+export function templateFrame(spot: Spot): { label: string; prompt: string } {
   const sky = SKY_WORDS[spot.light.phase];
-  const what = `${spot.name} (${spot.kind})`;
-  return [
-    { label: "Main shot", prompt: `${what} seen from about ${spot.shot.standDistanceM} metres away, whole subject in frame, ${sky}` },
-    { label: "Detail", prompt: `close-up of one detail of ${what}, filling the frame, ${sky}` },
-    { label: "Vertical", prompt: `tall vertical view of ${what} with a path or railing in the foreground, ${sky}` },
-    {
-      label: "Creative",
-      prompt:
-        spot.shot.lightAngle === "back-lit"
-          ? `${what} as a dark silhouette against the bright sky, ${sky}`
-          : `${what} with a small person in front for scale, ${sky}`,
-    },
-  ].map((f) => ({ ...f, prompt: styled(f.prompt) }));
+  const n = spot.name;
+  const byKind: Record<Spot["kind"], { label: string; scene: string }> = {
+    tower: { label: "Looking up", scene: `${n} seen from its base looking straight up, ${sky}` },
+    church: { label: "From the steps", scene: `${n} seen from the bottom of its steps looking up, ${sky}` },
+    building: { label: "From below", scene: `${n} seen from low down looking up at its walls and roof, ${sky}` },
+    monument: { label: "Up close", scene: `${n} close up, filling the picture, ${sky}` },
+    bridge: { label: "Across the water", scene: `${n} stretching across the water with its reflection below, ${sky}` },
+    nature: { label: "Under the trees", scene: `tall old trees with thick trunks in ${n}, a squirrel on one trunk, ${sky}` },
+    viewpoint: { label: "The view", scene: `the wide view from ${n}, hills and rooftops to the horizon, ${sky}` },
+    other: { label: "The scene", scene: `${n} with a small person in front for scale, ${sky}` },
+  };
+  const t = byKind[spot.kind];
+  return { label: t.label, prompt: styled(t.scene) };
 }

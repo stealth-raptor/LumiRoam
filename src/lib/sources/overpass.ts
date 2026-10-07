@@ -74,3 +74,39 @@ out center tags 800;`;
   }
   throw lastErr;
 }
+
+/** A park/garden/square named like `name` near `near`, with its bounding box (e.g. "Lodhi Gardens"). */
+export async function areaNamed(
+  name: string,
+  near: LatLon,
+): Promise<{ name: string; center: LatLon; bbox: { south: number; north: number; west: number; east: number } } | null> {
+  const safe = name.replace(/[^\p{L}\p{N} '-]/gu, "").trim();
+  if (safe.length < 3) return null;
+  const q = `[out:json][timeout:15];
+nwr["name"~"^${safe}",i]["leisure"~"^(park|garden|nature_reserve)$"](around:1500,${near.lat},${near.lon});
+out tags bb 1;`;
+  for (const endpoint of ENDPOINTS) {
+    try {
+      const data = await getJSON<{ elements: (OverpassElement & { bounds?: { minlat: number; minlon: number; maxlat: number; maxlon: number } })[] }>(
+        endpoint,
+        {
+          method: "POST",
+          body: new URLSearchParams({ data: q }),
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          timeoutMs: 20000,
+        },
+      );
+      const e = data.elements[0];
+      if (!e?.bounds) return null;
+      // "out bb" returns bounds but no centre; the middle of the box is close enough for a park
+      return {
+        name: e.tags?.name ?? name,
+        center: { lat: (e.bounds.minlat + e.bounds.maxlat) / 2, lon: (e.bounds.minlon + e.bounds.maxlon) / 2 },
+        bbox: { south: e.bounds.minlat, north: e.bounds.maxlat, west: e.bounds.minlon, east: e.bounds.maxlon },
+      };
+    } catch {
+      // try the next public instance
+    }
+  }
+  return null;
+}

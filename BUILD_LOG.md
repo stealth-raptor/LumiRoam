@@ -13,6 +13,14 @@ Running notes for the DEV write-up. Newest at the bottom of each section.
 
 ## What broke
 
+- **"Lodhi Garden" geocoded to a tomb.** Nominatim matched "Tomb of Sikandar Lodhi, *Lodhi Garden*, …" because the garden is part of the tomb's address, and OSM spells the park "Lodhi Gardens". The walk was centred on the garden's northern edge and pulled in Khan Market. Fix: prefer an *area* result, otherwise look up a park by that name near the match via Overpass, then keep stops inside the park's bounding box.
+- **The ranking only knew English.** "Bara Gumbad", "Sheesh Gumbad" and "Tomb of Sikandar Lodi" were all classed as "other" and dropped. Added gumbad, masjid, qila, maqbara, dargah, baoli, minar, darwaza, mahal, chhatri, ghat and more. My "small stuff" filter also dropped OSM `historic=tomb`, which in Delhi means a mausoleum.
+- **The park blocked its own monuments.** The garden's centre point was a stop, and nothing within 120 m of it was allowed, so the two Gumbads disappeared. Parks no longer crowd out what's inside them.
+- **Overpass outages got cached for a week.** A Wikipedia-only result from an outage was cached as if complete. Now only complete results are cached.
+- **Gemma 4 "thinks" before it talks.** On Cloudflare a 50-word story took ~40 s, mostly hidden reasoning. My 25 s walk timeout cut it off and quietly fell back to the raw Wikipedia intro. `chat_template_kwargs: {enable_thinking: false}` brings it to ~2 s and uses ~4× fewer neurons. Mastra's built-in OpenAI-compatible client can't add body fields, so Gemma now goes through `@ai-sdk/openai-compatible` with a small fetch wrapper (`LLM_EXTRA_BODY`).
+- **Duplicate-key race in GridFS.** Two stops drew identical fallback SVGs at the same moment. The unique index did its job; the code now reuses the winner and cleans up the orphaned chunks.
+- **Cloudflare FLUX rejects `seed`.** That's fine: drawings are cached by prompt in GridFS, so they stay stable anyway.
+
 - **No more free Hugging Face credits.** The HF token came from a free account whose monthly Inference Provider credits were already gone, so every Gemma call returned `402 Payment Required`. Mastra's fallback model and the template text kept the app working, but the plans weren't written by Gemma.
 - **ZeroGPU quota maths.** The official FLUX.1-schnell Space draws a lovely crayon picture in about 10 s on the HF token's free ZeroGPU allowance. But every call *reserves* 90 s of GPU, and the free daily allowance is a few minutes. After one test image, every request failed with "90s requested vs. 0s left". The page also kept firing all 20 requests after the first refusal; it now stops at the first quota error.
 - **Hydration failure from a date.** The server rendered "Friday, October 9" and the phone rendered "Friday, 9 October", so React threw away the whole shoot page and nothing on it worked. There was no visible error, just dead buttons. Dates for the destination's wall-clock time are now formatted in a fixed locale and time zone; real instants in the walk diary are marked as browser-rendered.
@@ -40,6 +48,10 @@ Running notes for the DEV write-up. Newest at the bottom of each section.
 - SDXL-Turbo's weights are open, but its licence is Stability's non-commercial community licence, not an OSI open-source one. That's fine for a hackathon, but worth being honest about in the post.
 
 ## Decisions
+
+- **A short photowalk: 4 stops, one drawing each, 800 m default radius** (options 500 m / 800 m / 1.2 km).
+- **One Gemma call per plan**, with all 4 photos and fact sheets, so the drawings can differ from each other. A Lodhi Garden example is in the prompt (tomb from the bottom up, the trees, a squirrel on a trunk, the Athpula bridge), plus a per-stop drawing hint (parks: trees and wildlife; monuments: from below). Result for Lodhi Garden: "Light through leaves", "Dome from below", an upward detail of Shish Gumbad, and Sikandar Lodi's tomb as a silhouette.
+- Timings now: plan ~18-28 s, each FLUX drawing ~5-25 s (lazy, one at a time), walk tick ~6-30 s, mostly Wikipedia lookups and TTS.
 
 - **Drawings, final design (your call):** Gemma 4 (vision) gets the real Commons photo plus the computed fact sheet and, in **one call per spot**, returns the plan *and* 4 drawing prompts (Main shot, Detail, Vertical, Creative). It looks at the photo so the drawing resembles the real place. **FLUX.1 [schnell]** (Apache-2.0) draws each prompt on first view. Every drawing is cached in GridFS by prompt hash, so it's never drawn twice. While a frame waits, the free geometry SVG stands in for it.
 - **Cloudflare Workers AI** came out as the zero-cost host for both halves. One free account (10k neurons a day) serves Gemma 4 26B-A4B with vision through an OpenAI-compatible endpoint, plus FLUX.1 schnell at about 40-60 neurons a drawing. Everything is still configurable: Hugging Face router, OpenRouter's free Gemma tier, or the HF ZeroGPU Space are all just env changes.

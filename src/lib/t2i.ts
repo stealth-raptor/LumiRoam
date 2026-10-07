@@ -21,7 +21,7 @@ async function drawCloudflare(prompt: string): Promise<{ data: Buffer; type: str
   const res = await fetch(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, steps: 4, seed: SEED }),
+    body: JSON.stringify({ prompt, steps: 4 }), // Workers AI rejects a seed; the GridFS cache keeps drawings stable
     signal: AbortSignal.timeout(60_000),
   });
   const body = (await res.json().catch(() => null)) as { success?: boolean; result?: { image?: string }; errors?: { message: string }[] } | null;

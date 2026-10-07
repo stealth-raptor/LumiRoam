@@ -98,11 +98,11 @@ export const Sketch = z.object({
 export type Sketch = z.infer<typeof Sketch>;
 
 /**
- * One of four drawings per spot. Gemma looks at the real Commons photo plus the computed facts
- * and writes the prompt; an open text-to-image model draws it. `url` is null until drawn.
+ * The drawing for a stop. Gemma looks at the real Commons photo plus the computed facts and writes
+ * the prompt; an open text-to-image model draws it. `url` is null until drawn.
  */
 export const Frame = z.object({
-  label: z.string(), // "Main shot", "Detail", "Vertical", "Creative"
+  label: z.string(), // e.g. "Tomb from below"
   prompt: z.string(),
   promptBy: z.enum(["gemma", "template"]),
   url: z.string().nullable(),
@@ -131,6 +131,6 @@ export const PlanRequest = z.object({
   place: z.string().min(2),
   localTime: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/), // wall-clock time at the place
   gear: Gear,
-  radiusM: z.number().min(300).max(5000).default(1500),
+  radiusM: z.number().min(300).max(5000).default(800), // a photowalk, not a city tour
 });
 export type PlanRequest = z.infer<typeof PlanRequest>;

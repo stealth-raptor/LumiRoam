@@ -5,7 +5,8 @@ import { forecastAt } from "@/lib/sources/openmeteo";
 import { findCandidates, pickDiverse } from "@/lib/spots";
 import { findPhoto, leadPhotos } from "@/lib/sources/commons";
 import { lightAt, shotGeometry } from "@/lib/light";
-import { factSheet, styled, templateFrames, templatePlan } from "@/lib/plan-text";
+import { distanceM } from "@/lib/geo";
+import { factSheet, styled, templateFrame, templatePlan } from "@/lib/plan-text";
 import { cached, dbConfigured, saveShoot } from "@/lib/db";
 import { geometrySketch } from "@/lib/sketch";
 import { USER_AGENT } from "@/lib/http";
@@ -15,6 +16,7 @@ import { gemmaConfigured } from "../model";
 const Located = z.object({
   request: PlanRequest,
   center: LatLon,
+  bbox: z.object({ south: z.number(), north: z.number(), west: z.number(), east: z.number() }).nullable(),
   label: z.string(),
   timezone: z.string(),
   utc: z.string(),
@@ -30,13 +32,14 @@ const locate = createStep({
   inputSchema: PlanRequest,
   outputSchema: Located,
   execute: async ({ inputData }) => {
-    const hit = await cached(`geocode:${inputData.place.toLowerCase()}`, 30 * 86400, () => geocode(inputData.place));
+    const hit = await cached(`geocode5:${inputData.place.toLowerCase()}`, 30 * 86400, () => geocode(inputData.place));
     if (!hit) throw new Error(`Couldn't find "${inputData.place}" on OpenStreetMap`);
     const center = { lat: hit.lat, lon: hit.lon };
     const f = await forecastAt(center, inputData.localTime);
     return {
       request: inputData,
       center,
+      bbox: hit.bbox ?? null,
       label: hit.label,
       timezone: f.timezone,
       utc: f.utc.toISOString(),
@@ -46,7 +49,7 @@ const locate = createStep({
   },
 });
 
-const MAX_SPOTS = 6;
+const MAX_SPOTS = 4; // a short photowalk: 4 stops, one drawing each
 const MIN_SPOTS = 4;
 
 const findSpots = createStep({
@@ -57,8 +60,23 @@ const findSpots = createStep({
   execute: async ({ inputData: ctx }) => {
     const { center, request } = ctx;
     const cell = `${center.lat.toFixed(3)},${center.lon.toFixed(3)},${request.radiusM}`;
-    const candidates = await cached(`candidates:${cell}`, 7 * 86400, () => findCandidates(center, request.radiusM));
-    const ordered = pickDiverse(candidates, 16);
+    const { candidates } = await cached(
+      `candidates2:${cell}`,
+      7 * 86400,
+      () => findCandidates(center, request.radiusM),
+      (r) => r.complete,
+    );
+    // If the place is an area that fits inside the walk (a park, a square, a campus), keep the stops
+    // inside it: "Lodhi Garden" should be a walk through the garden, not to the market next door.
+    const inArea = (c: (typeof candidates)[number]) => {
+      const b = ctx.bbox;
+      if (!b) return true;
+      const pad = 0.0005; // ~50 m, for things on the edge
+      return c.subject.lat >= b.south - pad && c.subject.lat <= b.north + pad && c.subject.lon >= b.west - pad && c.subject.lon <= b.east + pad;
+    };
+    const areaFits = ctx.bbox && distanceM({ lat: ctx.bbox.south, lon: ctx.bbox.west }, { lat: ctx.bbox.north, lon: ctx.bbox.east }) <= request.radiusM * 2.5;
+    const inside = areaFits ? candidates.filter(inArea) : candidates;
+    const ordered = pickDiverse(inside.length >= MIN_SPOTS ? inside : candidates, 16);
     const utc = new Date(ctx.utc);
     const notes: string[] = [];
     const pageImage = (c: (typeof ordered)[number]) => c.osmTags["lumiroam:pageImage"] || "";
@@ -83,15 +101,16 @@ const findSpots = createStep({
   },
 });
 
-// one Gemma call per spot returns the plan AND the four drawing prompts (free tiers count requests)
-const PlanAndFrames = Plan.omit({ writtenBy: true }).extend({
-  frames: z.array(z.object({ label: z.string(), prompt: z.string() })).min(1).max(4),
-});
+// ONE Gemma call for the whole walk: it sees every stop's photo at once, so it can make the four
+// drawings different from each other (and free tiers count requests)
+const StopPlan = Plan.omit({ writtenBy: true }).extend({ drawingLabel: z.string(), drawingPrompt: z.string() });
+const WalkPlan = z.object({ stops: z.array(StopPlan) });
 
-/** The Commons photo as a data URL, so the model host doesn't have to fetch from Wikimedia itself. */
+/** The Commons photo, small, as a data URL: the model host doesn't have to fetch from Wikimedia. */
 async function photoForGemma(url: string): Promise<{ image: string; mimeType: string } | null> {
   try {
-    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(15_000) });
+    const small = url.replace(/\/\d+px-/, "/512px-"); // Commons thumbnails: fewer image tokens
+    const res = await fetch(small, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) return null;
     const mimeType = res.headers.get("content-type")?.split(";")[0] || "image/jpeg";
     return { image: `data:${mimeType};base64,${Buffer.from(await res.arrayBuffer()).toString("base64")}`, mimeType };
@@ -100,18 +119,26 @@ async function photoForGemma(url: string): Promise<{ image: string; mimeType: st
   }
 }
 
-const unsketched = (frames: { label: string; prompt: string }[], by: "gemma" | "template"): Frame[] =>
-  frames.map((f) => ({ label: f.label, prompt: styled(f.prompt), promptBy: by, url: null, model: null }));
+const frameOf = (label: string, prompt: string, by: "gemma" | "template"): Frame => ({
+  label,
+  prompt: styled(prompt),
+  promptBy: by,
+  url: null,
+  model: null,
+});
 
 const writePlans = createStep({
   id: "write-plans",
   description:
-    "Gemma looks at the real Commons photo plus the computed fact sheet and writes a plan and 4 drawing prompts per spot; template text if Gemma is offline.",
+    "Gemma looks at the real Commons photos of all 4 stops plus the computed fact sheets, and writes a plan and one drawing prompt per stop, varied across the walk; template text if Gemma is offline.",
   inputSchema: WithSpots,
   outputSchema: WithSpots,
   execute: async ({ inputData: ctx, mastra }) => {
     const gear = ctx.request.gear;
-    const fallback = (s: Spot): Spot => ({ ...s, plan: templatePlan(s, gear), frames: unsketched(templateFrames(s), "template") });
+    const fallback = (s: Spot): Spot => {
+      const t = templateFrame(s);
+      return { ...s, plan: templatePlan(s, gear), frames: [{ ...t, promptBy: "template", url: null, model: null }] };
+    };
     if (!gemmaConfigured()) {
       return {
         ...ctx,
@@ -119,41 +146,36 @@ const writePlans = createStep({
         notes: [...ctx.notes, "Gemma is offline (no LLM_API_KEY / HF_TOKEN), so plans and drawing prompts are template text."],
       };
     }
-    const agent = mastra.getAgent("plannerAgent");
-    let failures = 0;
-    // two at a time: free hosts rate-limit bursts
-    const spots = await mapLimit(ctx.spots, 2, async (s) => {
-      try {
-        const photo = s.photo ? await photoForGemma(s.photo.thumbUrl) : null;
-        const res = await agent.generate(
-          [
-            {
-              role: "user",
-              content: [
-                ...(photo ? [{ type: "image" as const, image: photo.image, mimeType: photo.mimeType }] : []),
-                { type: "text" as const, text: factSheet(s, gear) },
-              ],
-            },
-          ],
-          {
-            // schema goes in the prompt: free Gemma hosts don't all support response_format
-            structuredOutput: { schema: PlanAndFrames, jsonPromptInjection: "inline" },
-            abortSignal: AbortSignal.timeout(90_000),
-          },
-        );
-        const { frames, ...plan } = res.object;
-        // if Gemma returned fewer than 4 frames, top up from the template set
-        const template = templateFrames(s);
-        const all = [...unsketched(frames, "gemma"), ...unsketched(template.slice(frames.length), "template")];
-        return { ...s, plan: { ...plan, writtenBy: "gemma" as const }, frames: all };
-      } catch (err) {
-        failures++;
-        console.warn(`[write-plans] Gemma failed for ${s.name}:`, (err as Error).message.slice(0, 200));
-        return fallback(s);
-      }
-    });
-    const notes = failures ? [...ctx.notes, `Gemma failed on ${failures} spot(s); those use template text.`] : ctx.notes;
-    return { ...ctx, spots, notes };
+    try {
+      const photos = await Promise.all(ctx.spots.map((s) => (s.photo ? photoForGemma(s.photo.thumbUrl) : Promise.resolve(null))));
+      const content = ctx.spots.flatMap((s, i) => [
+        { type: "text" as const, text: `
+=== STOP ${i + 1} of ${ctx.spots.length} ===` },
+        ...(photos[i] ? [{ type: "image" as const, image: photos[i]!.image, mimeType: photos[i]!.mimeType }] : []),
+        { type: "text" as const, text: factSheet(s, gear) },
+      ]);
+      const res = await mastra.getAgent("plannerAgent").generate([{ role: "user", content }], {
+        // schema goes in the prompt: free Gemma hosts don't all support response_format
+        structuredOutput: { schema: WalkPlan, jsonPromptInjection: "inline" },
+        abortSignal: AbortSignal.timeout(120_000),
+      });
+      const stops = res.object.stops;
+      let missing = 0;
+      const spots = ctx.spots.map((s, i) => {
+        const stop = stops[i];
+        if (!stop) {
+          missing++;
+          return fallback(s);
+        }
+        const { drawingLabel, drawingPrompt, ...plan } = stop;
+        return { ...s, plan: { ...plan, writtenBy: "gemma" as const }, frames: [frameOf(drawingLabel, drawingPrompt, "gemma")] };
+      });
+      const notes = missing ? [...ctx.notes, `Gemma skipped ${missing} stop(s); those use template text.`] : ctx.notes;
+      return { ...ctx, spots, notes };
+    } catch (err) {
+      console.warn("[write-plans] Gemma failed:", (err as Error).message.slice(0, 300));
+      return { ...ctx, spots: ctx.spots.map(fallback), notes: [...ctx.notes, "Gemma didn't answer, so plans use template text."] };
+    }
   },
 });
 
