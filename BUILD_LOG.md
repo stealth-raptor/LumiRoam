@@ -13,6 +13,8 @@ Running notes for the DEV write-up. Newest at the bottom of each section.
 
 ## What broke
 
+- **Open-Meteo: "Daily API request limit exceeded" on Render.** The free limit is per IP, and Render's free tier shares outbound IPs, so neighbours used up our quota. It was fatal because I also used Open-Meteo for the place's *time zone*. Now the time zone comes offline from the coordinates (`@photostructure/tz-lookup`, 97 KB, DST handled with `Intl`). Weather tries Open-Meteo, then MET Norway (free, no key), is cached for an hour per ~1 km cell in MongoDB, and if all else fails the plan just says "no forecast".
+
 - **First deploy on Render:** every plan failed with `tlsv1 alert internal error … SSL alert number 80`. That's what Atlas does to an IP that isn't on its Network Access list: it kills the TLS handshake instead of saying "not allowed". Render's free tier has no fixed outbound IP, so the fix is allowing `0.0.0.0/0` in Atlas. It also exposed two bugs of mine. The app cached the *failed* connection promise forever, so it would have kept failing even after Atlas was fixed. And a database outage took the whole plan down, because the cache lookup in the first step threw. Now the connection retries, the cache is skipped when Mongo is down, sketches inline, and the plan still shows with "Not saved: …" and a readable reason.
 
 - **"Lodhi Garden" geocoded to a tomb.** Nominatim matched "Tomb of Sikandar Lodhi, *Lodhi Garden*, …" because the garden is part of the tomb's address, and OSM spells the park "Lodhi Gardens". The walk was centred on the garden's northern edge and pulled in Khan Market. Fix: prefer an *area* result, otherwise look up a park by that name near the match via Overpass, then keep stops inside the park's bounding box.
