@@ -13,6 +13,11 @@ Running notes for the DEV write-up. Newest at the bottom of each section.
 
 ## What broke
 
+- **No more free Hugging Face credits.** The HF token came from a free account whose monthly Inference Provider credits were already gone, so every Gemma call returned `402 Payment Required`. Mastra's fallback model and the template text kept the app working, but the plans weren't written by Gemma.
+- **ZeroGPU quota maths.** The official FLUX.1-schnell Space draws a lovely crayon picture in about 10 s on the HF token's free ZeroGPU allowance. But every call *reserves* 90 s of GPU, and the free daily allowance is a few minutes. After one test image, every request failed with "90s requested vs. 0s left". The page also kept firing all 20 requests after the first refusal; it now stops at the first quota error.
+- **Hydration failure from a date.** The server rendered "Friday, October 9" and the phone rendered "Friday, 9 October", so React threw away the whole shoot page and nothing on it worked. There was no visible error, just dead buttons. Dates for the destination's wall-clock time are now formatted in a fixed locale and time zone; real instants in the walk diary are marked as browser-rendered.
+- **A dead end, and why:** I first built on-device "photo → crayon" (Informative Drawings, a 17 MB MIT ONNX model). It ran in 2 s, but needed 563 MB of RAM in Node, too much for Render's free 512 MB, so I moved it into the browser. Then it turned out not to be what you wanted at all. You wanted *Gemma to look at the photo and describe the drawing*, with a text-to-image model drawing it. Removed.
+
 - **suncalc 2.x changed units.** I wrote the sun code assuming 1.x (radians, azimuth from south). Version 2 returns degrees, with azimuth from north. The first test said the sun was at -106° altitude, which can't happen. `@types/suncalc` still describes 1.x, so TypeScript didn't catch it. Fixed by reading the package's own README and removing the stale types.
 - **Naive keyword matching:** "Tower Hotel" became a *tower* and "Bridge Theatre" a *bridge*. Fixed by classifying on the head noun of the name (the last word, or the word before "of").
 - **Public Overpass servers went down at about 1:40am.** All three instances returned 504 or 500, and overpass-api.de said "the server is probably too busy". A heavy query with negative-regex filters also timed out on its own, so I moved those filters into our code. Now: spots get cached in MongoDB, and if Overpass is down, ranking falls back to Wikipedia only.
@@ -35,6 +40,9 @@ Running notes for the DEV write-up. Newest at the bottom of each section.
 - SDXL-Turbo's weights are open, but its licence is Stability's non-commercial community licence, not an OSI open-source one. That's fine for a hackathon, but worth being honest about in the post.
 
 ## Decisions
+
+- **Drawings, final design (your call):** Gemma 4 (vision) gets the real Commons photo plus the computed fact sheet and, in **one call per spot**, returns the plan *and* 4 drawing prompts (Main shot, Detail, Vertical, Creative). It looks at the photo so the drawing resembles the real place. **FLUX.1 [schnell]** (Apache-2.0) draws each prompt on first view. Every drawing is cached in GridFS by prompt hash, so it's never drawn twice. While a frame waits, the free geometry SVG stands in for it.
+- **Cloudflare Workers AI** came out as the zero-cost host for both halves. One free account (10k neurons a day) serves Gemma 4 26B-A4B with vision through an OpenAI-compatible endpoint, plus FLUX.1 schnell at about 40-60 neurons a drawing. Everything is still configurable: Hugging Face router, OpenRouter's free Gemma tier, or the HF ZeroGPU Space are all just env changes.
 
 - **Dropped DigitalOcean (Oct 8, about 3am).** A GPU Droplet needs a card on file, at about $0.76/hr, and that wasn't possible for me. Gemma moved to **Hugging Face Inference Providers**: `router.huggingface.co/v1` is OpenAI-compatible, so Mastra only needed a new base URL. Gemma 4 31B runs on Novita/DeepInfra at about $0.14 in / $0.40 out per million tokens, which is roughly $0.002 per plan. The 26B-A4B MoE is a Mastra model fallback. Still open weights and swappable through env vars, but no longer on a server I control. That's a trade-off worth saying out loud in the post.
 - **More MongoDB, where it earns its place:**

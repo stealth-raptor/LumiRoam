@@ -5,10 +5,11 @@ import { forecastAt } from "@/lib/sources/openmeteo";
 import { findCandidates, pickDiverse } from "@/lib/spots";
 import { findPhoto, leadPhotos } from "@/lib/sources/commons";
 import { lightAt, shotGeometry } from "@/lib/light";
-import { factSheet, templatePlan } from "@/lib/plan-text";
+import { factSheet, styled, templateFrames, templatePlan } from "@/lib/plan-text";
 import { cached, dbConfigured, saveShoot } from "@/lib/db";
-import { makeSketch } from "@/lib/sketch";
-import { LatLon, Plan, PlanRequest, Spot, Weather } from "@/lib/types";
+import { geometrySketch } from "@/lib/sketch";
+import { USER_AGENT } from "@/lib/http";
+import { type Frame, LatLon, Plan, PlanRequest, Spot, Weather } from "@/lib/types";
 import { gemmaConfigured } from "../model";
 
 const Located = z.object({
@@ -73,7 +74,7 @@ const findSpots = createStep({
         findPhoto(c.subject, c.name, leads.get(pageImage(c)) ?? null),
       ).catch(() => null);
       const light = lightAt(c.subject, utc, ctx.utcOffsetSeconds);
-      const spot: Spot = { ...c, photo, light, weather: ctx.weather, shot: shotGeometry(c, photo, light, ctx.weather), plan: null, sketch: null };
+      const spot: Spot = { ...c, photo, light, weather: ctx.weather, shot: shotGeometry(c, photo, light, ctx.weather), plan: null, sketch: null, frames: [] };
       (photo ? withPhoto : without).push(spot);
     }
     const spots = [...withPhoto, ...without.slice(0, Math.max(0, MIN_SPOTS - withPhoto.length))];
@@ -82,36 +83,73 @@ const findSpots = createStep({
   },
 });
 
-const PlanBody = Plan.omit({ writtenBy: true });
+// one Gemma call per spot returns the plan AND the four drawing prompts (free tiers count requests)
+const PlanAndFrames = Plan.omit({ writtenBy: true }).extend({
+  frames: z.array(z.object({ label: z.string(), prompt: z.string() })).min(1).max(4),
+});
+
+/** The Commons photo as a data URL, so the model host doesn't have to fetch from Wikimedia itself. */
+async function photoForGemma(url: string): Promise<{ image: string; mimeType: string } | null> {
+  try {
+    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return null;
+    const mimeType = res.headers.get("content-type")?.split(";")[0] || "image/jpeg";
+    return { image: `data:${mimeType};base64,${Buffer.from(await res.arrayBuffer()).toString("base64")}`, mimeType };
+  } catch {
+    return null;
+  }
+}
+
+const unsketched = (frames: { label: string; prompt: string }[], by: "gemma" | "template"): Frame[] =>
+  frames.map((f) => ({ label: f.label, prompt: styled(f.prompt), promptBy: by, url: null, model: null }));
 
 const writePlans = createStep({
   id: "write-plans",
-  description: "Gemma writes a short plan per spot from the computed fact sheet; template text if Gemma is offline.",
+  description:
+    "Gemma looks at the real Commons photo plus the computed fact sheet and writes a plan and 4 drawing prompts per spot; template text if Gemma is offline.",
   inputSchema: WithSpots,
   outputSchema: WithSpots,
   execute: async ({ inputData: ctx, mastra }) => {
     const gear = ctx.request.gear;
+    const fallback = (s: Spot): Spot => ({ ...s, plan: templatePlan(s, gear), frames: unsketched(templateFrames(s), "template") });
     if (!gemmaConfigured()) {
       return {
         ...ctx,
-        spots: ctx.spots.map((s) => ({ ...s, plan: templatePlan(s, gear) })),
-        notes: [...ctx.notes, "Gemma is offline (no HF_TOKEN), so plans are template text."],
+        spots: ctx.spots.map(fallback),
+        notes: [...ctx.notes, "Gemma is offline (no LLM_API_KEY / HF_TOKEN), so plans and drawing prompts are template text."],
       };
     }
     const agent = mastra.getAgent("plannerAgent");
     let failures = 0;
-    // one GPU: two at a time keeps it busy without queueing everything behind one request
+    // two at a time: free hosts rate-limit bursts
     const spots = await mapLimit(ctx.spots, 2, async (s) => {
       try {
-        const res = await agent.generate(factSheet(s, gear), {
-          structuredOutput: { schema: PlanBody },
-          abortSignal: AbortSignal.timeout(60_000),
-        });
-        return { ...s, plan: { ...res.object, writtenBy: "gemma" as const } };
+        const photo = s.photo ? await photoForGemma(s.photo.thumbUrl) : null;
+        const res = await agent.generate(
+          [
+            {
+              role: "user",
+              content: [
+                ...(photo ? [{ type: "image" as const, image: photo.image, mimeType: photo.mimeType }] : []),
+                { type: "text" as const, text: factSheet(s, gear) },
+              ],
+            },
+          ],
+          {
+            // schema goes in the prompt: free Gemma hosts don't all support response_format
+            structuredOutput: { schema: PlanAndFrames, jsonPromptInjection: "inline" },
+            abortSignal: AbortSignal.timeout(90_000),
+          },
+        );
+        const { frames, ...plan } = res.object;
+        // if Gemma returned fewer than 4 frames, top up from the template set
+        const template = templateFrames(s);
+        const all = [...unsketched(frames, "gemma"), ...unsketched(template.slice(frames.length), "template")];
+        return { ...s, plan: { ...plan, writtenBy: "gemma" as const }, frames: all };
       } catch (err) {
         failures++;
-        console.warn(`[write-plans] Gemma failed for ${s.name}:`, (err as Error).message);
-        return { ...s, plan: templatePlan(s, gear) };
+        console.warn(`[write-plans] Gemma failed for ${s.name}:`, (err as Error).message.slice(0, 200));
+        return fallback(s);
       }
     });
     const notes = failures ? [...ctx.notes, `Gemma failed on ${failures} spot(s); those use template text.`] : ctx.notes;
@@ -120,18 +158,14 @@ const writePlans = createStep({
 });
 
 const sketch = createStep({
-  id: "sketch",
-  description: "Crayon sketch of the composition: SDXL-Turbo img2img from the Commons photo, or a geometry drawing.",
+  id: "fallback-sketch",
+  description:
+    "A free SVG drawn from sun position and geometry, shown until the text-to-image drawings arrive (they are drawn on demand by /api/sketch and cached in GridFS).",
   inputSchema: WithSpots,
   outputSchema: WithSpots,
   execute: async ({ inputData: ctx }) => {
-    const notes = [...ctx.notes];
-    const spots = await mapLimit(ctx.spots, 2, async (s) => {
-      const out = await makeSketch(s);
-      if (out.warning && !notes.includes(out.warning)) notes.push(out.warning);
-      return { ...s, sketch: out.sketch };
-    });
-    return { ...ctx, spots, notes };
+    const spots = await mapLimit(ctx.spots, 3, async (s) => ({ ...s, sketch: await geometrySketch(s) }));
+    return { ...ctx, spots };
   },
 });
 

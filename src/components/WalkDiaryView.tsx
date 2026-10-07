@@ -23,7 +23,8 @@ export default function WalkDiaryView({ diary }: { diary: WalkDiary }) {
   return (
     <div className="flex flex-col gap-5">
       <header className="flex flex-col gap-1">
-        <p className="text-sm text-muted">
+        {/* real instants shown in the phone's own time zone: rendered differently on the server, on purpose */}
+        <p className="text-sm text-muted" suppressHydrationWarning>
           {new Date(diary.startedAt).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })},{" "}
           {time(diary.startedAt)}–{time(diary.endedAt)}
         </p>
@@ -60,7 +61,7 @@ export default function WalkDiaryView({ diary }: { diary: WalkDiary }) {
         <ol className="flex flex-col gap-3">
           {diary.events.map((e, i) => (
             <li key={i} className="flex flex-col gap-2 rounded-xl border border-line bg-card p-3 text-sm">
-              <p className="text-xs text-muted">
+              <p className="text-xs text-muted" suppressHydrationWarning>
                 {time(e.at)} · {e.kind === "story" ? "📖 story" : "📷 your shot"} · {e.title}
               </p>
               <p>{e.text}</p>

@@ -1,68 +1,7 @@
-import { InferenceClient } from "@huggingface/inference";
 import { dbConfigured } from "./db";
 import { norm360 } from "./geo";
-import { USER_AGENT } from "./http";
-import { findMedia, mediaKey, mediaUrl, putMedia } from "./media";
+import { mediaKey, mediaUrl, putMedia } from "./media";
 import type { Sketch, Spot } from "./types";
-
-const SKETCH_MODEL = () => process.env.SKETCH_MODEL ?? "Qwen/Qwen-Image-Edit";
-const SKETCH_PROVIDER = () => process.env.SKETCH_PROVIDER ?? "fal-ai";
-
-/**
- * Crayon sketch of the shot: a rough idea, not a prediction.
- *  - SKETCH_MODE=hf: an open image-editing model on Hugging Face redraws the real Commons photo
- *    as a child's crayon drawing, so the layout is right. Costs a few cents per image.
- *  - default: an SVG drawn from the sun position and geometry alone. Free.
- * Either way the result is stored once in MongoDB GridFS and reused by every later shoot.
- */
-export async function makeSketch(spot: Spot): Promise<{ sketch: Sketch; warning?: string }> {
-  if (process.env.SKETCH_MODE === "hf" && spot.photo && process.env.HF_TOKEN) {
-    try {
-      return { sketch: await imageModelSketch(spot) };
-    } catch (err) {
-      console.warn(`[sketch] image model failed for ${spot.name}:`, (err as Error).message);
-      return {
-        sketch: await geometrySketch(spot),
-        warning: "The image model didn't answer, so sketches are drawn from sun + geometry data instead.",
-      };
-    }
-  }
-  return { sketch: await geometrySketch(spot) };
-}
-
-async function imageModelSketch(spot: Spot): Promise<Sketch> {
-  const photo = spot.photo!;
-  const model = SKETCH_MODEL();
-  // the same photo in the same light always gives the same sketch: never pay for it twice
-  const key = mediaKey("sketch", model, photo.title, spot.light.phase);
-  if (dbConfigured()) {
-    const hit = await findMedia(key);
-    if (hit) return { url: mediaUrl(hit), source: "image-model", model };
-  }
-  const src = await fetch(photo.thumbUrl, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(20_000) });
-  if (!src.ok) throw new Error(`Commons image ${src.status}`);
-  const hf = new InferenceClient(process.env.HF_TOKEN);
-  const out = await hf.imageToImage(
-    { provider: SKETCH_PROVIDER() as "fal-ai", model, inputs: await src.blob(), parameters: { prompt: sketchPrompt(spot) } },
-    { signal: AbortSignal.timeout(90_000) },
-  );
-  const bytes = Buffer.from(await out.arrayBuffer());
-  const type = out.type || "image/png";
-  if (!dbConfigured()) return { url: `data:${type};base64,${bytes.toString("base64")}`, source: "image-model", model };
-  const id = await putMedia(key, bytes, type, { kind: "sketch", model, photo: photo.title, spot: spot.name, phase: spot.light.phase });
-  return { url: mediaUrl(id), source: "image-model", model };
-}
-
-export function sketchPrompt(spot: Spot): string {
-  const sky: Record<Spot["light"]["phase"], string> = {
-    "golden hour": "a warm orange and pink sunset sky",
-    "blue hour": "a deep blue twilight sky with glowing yellow windows",
-    night: "a dark night sky with yellow lights",
-    "low sun": "warm afternoon light and long shadows",
-    "high sun": "a bright blue sky with white clouds",
-  };
-  return `Redraw this photo as a young child's wax crayon drawing on white paper. Keep the same layout and composition: ${spot.name} stays where it is in the frame. Simple wobbly outlines, bright flat colours, ${sky[spot.light.phase]}. No text, no photo realism.`;
-}
 
 // ---------- geometry fallback ----------
 
@@ -107,11 +46,12 @@ ${[-55, 0, 55].map((dx) => `<rect x="${x + dx - 12}" y="${ground - 95}" width="2
   }
 }
 
-async function geometrySketch(spot: Spot): Promise<Sketch> {
+/** Free fallback picture drawn from the sun position and geometry alone, stored in GridFS. */
+export async function geometrySketch(spot: Spot): Promise<Sketch> {
   const svg = geometrySvg(spot);
-  if (!dbConfigured()) return { url: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, source: "geometry", model: null };
+  if (!dbConfigured()) return { url: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, source: "geometry" };
   const id = await putMedia(mediaKey("sketch-svg", svg), Buffer.from(svg), "image/svg+xml", { kind: "sketch", spot: spot.name, phase: spot.light.phase });
-  return { url: mediaUrl(id), source: "geometry", model: null };
+  return { url: mediaUrl(id), source: "geometry" };
 }
 
 export function geometrySvg(spot: Spot): string {

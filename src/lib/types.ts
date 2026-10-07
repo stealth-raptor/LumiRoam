@@ -90,12 +90,25 @@ export const Plan = z.object({
 });
 export type Plan = z.infer<typeof Plan>;
 
+/** The free fallback picture: an SVG drawn from sun position and geometry alone. */
 export const Sketch = z.object({
   url: z.string(), // /api/media/<GridFS id>, or a data: URL when there's no database
-  source: z.enum(["image-model", "geometry"]),
-  model: z.string().nullable(), // e.g. "Qwen/Qwen-Image-Edit" for image-model sketches
+  source: z.literal("geometry"),
 });
 export type Sketch = z.infer<typeof Sketch>;
+
+/**
+ * One of four drawings per spot. Gemma looks at the real Commons photo plus the computed facts
+ * and writes the prompt; an open text-to-image model draws it. `url` is null until drawn.
+ */
+export const Frame = z.object({
+  label: z.string(), // "Main shot", "Detail", "Vertical", "Creative"
+  prompt: z.string(),
+  promptBy: z.enum(["gemma", "template"]),
+  url: z.string().nullable(),
+  model: z.string().nullable(),
+});
+export type Frame = z.infer<typeof Frame>;
 
 export const Spot = Candidate.extend({
   photo: CommonsPhoto.nullable(),
@@ -104,6 +117,7 @@ export const Spot = Candidate.extend({
   shot: ShotGeometry,
   plan: Plan.nullable(),
   sketch: Sketch.nullable(),
+  frames: z.array(Frame).default([]),
 });
 export type Spot = z.infer<typeof Spot>;
 

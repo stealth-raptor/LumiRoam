@@ -3,9 +3,9 @@ import { Readable } from "node:stream";
 import { GridFSBucket, ObjectId } from "mongodb";
 import { db } from "./db";
 
-// Generated media (crayon sketches, spoken clips) lives in MongoDB GridFS, keyed by what produced it.
-// The same key is never generated twice: a sketch of the same photo in the same light, or the same
-// sentence in the same voice, comes straight back from Atlas instead of costing another API call.
+// Generated media (text-to-image drawings, fallback SVGs, spoken clips) lives in MongoDB GridFS,
+// keyed by what produced it. The same key is never generated twice: the same drawing prompt, or the
+// same sentence in the same voice, comes straight back from Atlas instead of costing another call.
 
 const BUCKET = "media";
 

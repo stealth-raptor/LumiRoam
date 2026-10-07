@@ -90,3 +90,41 @@ export function factSheet(spot: Spot, gear: Gear): string {
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+export const FRAME_LABELS = ["Main shot", "Detail", "Vertical", "Creative"] as const;
+
+/** Every drawing prompt ends with this, so all frames share one child's-crayon look. */
+export const DRAWING_STYLE =
+  "drawn as a young child's wax crayon picture on white paper, simple wobbly outlines, bright flat colours, no text";
+
+const SKY_WORDS: Record<Spot["light"]["phase"], string> = {
+  "golden hour": "warm orange and pink sunset sky, low sun",
+  "blue hour": "deep blue twilight sky, glowing yellow windows",
+  night: "dark night sky with yellow lights",
+  "low sun": "warm afternoon light, long shadows",
+  "high sun": "bright blue sky with white clouds",
+};
+
+/** Make sure a model-written prompt still carries the shared style. */
+export function styled(prompt: string): string {
+  const p = prompt.trim().replace(/\s+/g, " ").replace(/[.,;\s]+$/, "");
+  return /crayon/i.test(p) ? p : `${p}, ${DRAWING_STYLE}`;
+}
+
+/** Drawing prompts built from the facts alone, used when Gemma is offline. */
+export function templateFrames(spot: Spot): { label: string; prompt: string }[] {
+  const sky = SKY_WORDS[spot.light.phase];
+  const what = `${spot.name} (${spot.kind})`;
+  return [
+    { label: "Main shot", prompt: `${what} seen from about ${spot.shot.standDistanceM} metres away, whole subject in frame, ${sky}` },
+    { label: "Detail", prompt: `close-up of one detail of ${what}, filling the frame, ${sky}` },
+    { label: "Vertical", prompt: `tall vertical view of ${what} with a path or railing in the foreground, ${sky}` },
+    {
+      label: "Creative",
+      prompt:
+        spot.shot.lightAngle === "back-lit"
+          ? `${what} as a dark silhouette against the bright sky, ${sky}`
+          : `${what} with a small person in front for scale, ${sky}`,
+    },
+  ].map((f) => ({ ...f, prompt: styled(f.prompt) }));
+}
