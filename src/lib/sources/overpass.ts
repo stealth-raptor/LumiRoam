@@ -25,7 +25,8 @@ const ENDPOINTS = [
 
 // Small stuff that clutters cities: plaques, boundary stones, milestones. Filtered here rather than
 // in the query, because negative regex filters made overpass-api.de time out (504) on central London.
-const SMALL_HISTORIC = /^(boundary_stone|milestone|wayside_shrine|marker|tomb|grave|stone|cannon|anchor|district|yes)$/;
+// not "tomb": in Delhi historic=tomb is a whole mausoleum
+const SMALL_HISTORIC = /^(boundary_stone|milestone|wayside_shrine|marker|grave|stone|cannon|anchor|district|yes)$/;
 const SMALL_MEMORIAL = /^(plaque|blue_plaque|stolperstein|bench|stone)$/;
 
 /** Named things worth photographing within `radius` metres. */
